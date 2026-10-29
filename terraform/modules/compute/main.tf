@@ -334,10 +334,14 @@ resource "aws_ecs_service" "server" {
     assign_public_ip = var.task_assign_public_ip
   }
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.server.arn
-    container_name   = "server"
-    container_port   = 8080
+  dynamic "load_balancer" {
+    for_each = var.certificate_arn == null ? [] : [aws_lb_target_group.server.arn]
+
+    content {
+      target_group_arn = load_balancer.value
+      container_name   = "server"
+      container_port   = 8080
+    }
   }
 
   service_connect_configuration {
@@ -348,6 +352,11 @@ resource "aws_ecs_service" "server" {
   lifecycle {
     ignore_changes = [desired_count, task_definition]
   }
+
+  # ECS rejects a target group until an ALB listener has associated it with
+  # the load balancer. With no certificate, both the listener and this
+  # service's load-balancer attachment intentionally remain absent.
+  depends_on = [aws_lb_listener.https]
 
   tags = var.tags
 }

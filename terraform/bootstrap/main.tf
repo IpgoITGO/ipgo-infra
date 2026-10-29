@@ -138,6 +138,94 @@ data "aws_iam_policy_document" "github_plan_state" {
     actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.terraform_state.arn}/environments/dev/terraform.tfstate"]
   }
+
+  statement {
+    sid    = "DescribeDevSecrets"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+    ]
+    resources = ["arn:${local.partition}:secretsmanager:${var.aws_region}:${local.account_id}:secret:/ipgo/dev/*"]
+  }
+
+  statement {
+    sid    = "ReadDevRepositoryTags"
+    effect = "Allow"
+    actions = [
+      "ecr:GetLifecyclePolicy",
+      "ecr:ListTagsForResource",
+    ]
+    resources = ["arn:${local.partition}:ecr:${var.aws_region}:${local.account_id}:repository/ipgo-dev/*"]
+  }
+
+  statement {
+    sid    = "ReadDevServiceDiscovery"
+    effect = "Allow"
+    actions = [
+      "servicediscovery:GetNamespace",
+      "servicediscovery:ListTagsForResource",
+    ]
+    resources = ["arn:${local.partition}:servicediscovery:${var.aws_region}:${local.account_id}:namespace/*"]
+  }
+
+  statement {
+    sid    = "ReadDevLoadBalancerMetadata"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DescribeLoadBalancerAttributes",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DescribeTargetGroupAttributes",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "ReadDevRdsTags"
+    effect  = "Allow"
+    actions = ["rds:ListTagsForResource"]
+    resources = [
+      "arn:${local.partition}:rds:${var.aws_region}:${local.account_id}:db:ipgo-dev-*",
+      "arn:${local.partition}:rds:${var.aws_region}:${local.account_id}:subgrp:ipgo-dev-*",
+    ]
+  }
+
+  statement {
+    sid    = "ReadDevRoleMetadata"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:ListRoleTags",
+    ]
+    resources = ["arn:${local.partition}:iam::${local.account_id}:role/ipgo-dev-*"]
+  }
+
+  statement {
+    sid    = "ReadDevUploadBucketMetadata"
+    effect = "Allow"
+    actions = [
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketAcl",
+      "s3:GetBucketCORS",
+      "s3:GetBucketLogging",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetBucketOwnershipControls",
+      "s3:GetBucketPolicy",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:GetReplicationConfiguration",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketTagging",
+      "s3:GetBucketVersioning",
+      "s3:GetBucketWebsite",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:ListBucket",
+    ]
+    resources = ["arn:${local.partition}:s3:::ipgo-dev-uploads-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_plan_state" {
