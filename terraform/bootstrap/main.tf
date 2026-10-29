@@ -158,6 +158,50 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
     resources = ["arn:${local.partition}:ecr:${var.aws_region}:${local.account_id}:repository/ipgo-dev/*"]
   }
+
+  statement {
+    sid    = "ReadDevServiceDiscovery"
+    effect = "Allow"
+    actions = [
+      "servicediscovery:GetNamespace",
+      "servicediscovery:ListTagsForResource",
+    ]
+    resources = ["arn:${local.partition}:servicediscovery:${var.aws_region}:${local.account_id}:namespace/*"]
+  }
+
+  statement {
+    sid    = "ReadDevLoadBalancerMetadata"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DescribeLoadBalancerAttributes",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DescribeTargetGroupAttributes",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "ReadDevRdsTags"
+    effect  = "Allow"
+    actions = ["rds:ListTagsForResource"]
+    resources = [
+      "arn:${local.partition}:rds:${var.aws_region}:${local.account_id}:db:ipgo-dev-*",
+      "arn:${local.partition}:rds:${var.aws_region}:${local.account_id}:subgrp:ipgo-dev-*",
+    ]
+  }
+
+  statement {
+    sid    = "ReadDevRoleMetadata"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:ListRoleTags",
+    ]
+    resources = ["arn:${local.partition}:iam::${local.account_id}:role/ipgo-dev-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_plan_state" {
