@@ -19,6 +19,7 @@ one-off task만 사용하고, 작업이 끝나면 task가 정상 종료돼야 �
 ## 실행 전 필수 게이트
 
 - [ ] Infra `dev`가 승인된 Terraform plan으로 apply되어 RDS 상태가 `available`임
+- [ ] 서울 리전에서 주문 가능한 PostgreSQL 16.x와 `db.t4g.micro`·GP3 조합을 다시 확인함
 - [ ] Server `dev`의 immutable image에 V1~V13 migration과 `database/bootstrap/create_roles.sql`이 포함됨
 - [ ] one-off role bootstrap·Flyway task가 private RDS에 연결되며 runtime service와 분리됨
 - [ ] Spring task에 `SPRING_FLYWAY_ENABLED=false`가 설정됨

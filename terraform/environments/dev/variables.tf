@@ -24,10 +24,9 @@ variable "certificate_arn" {
 }
 
 variable "db_engine_version" {
-  description = "PostgreSQL version available in the target Region. Pin before the first apply."
+  description = "PostgreSQL version verified as orderable in the target Region."
   type        = string
-  default     = null
-  nullable    = true
+  default     = "16.15"
 }
 
 variable "db_instance_class" {
