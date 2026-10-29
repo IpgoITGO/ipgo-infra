@@ -215,7 +215,7 @@ data "aws_iam_policy_document" "github_plan_state" {
       "s3:GetBucketOwnershipControls",
       "s3:GetBucketPolicy",
       "s3:GetBucketPublicAccessBlock",
-      "s3:GetBucketReplication",
+      "s3:GetReplicationConfiguration",
       "s3:GetBucketRequestPayment",
       "s3:GetBucketTagging",
       "s3:GetBucketVersioning",
