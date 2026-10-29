@@ -9,3 +9,16 @@ variable "bucket_prefix" {
   type        = string
   default     = "ipgo-terraform-state-"
 }
+
+variable "github_owner" {
+  description = "GitHub organization allowed to assume deployment roles."
+  type        = string
+  default     = "IpgoITGO"
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Existing GitHub Actions OIDC provider ARN. Leave null to create it in this bootstrap stack."
+  type        = string
+  default     = null
+  nullable    = true
+}

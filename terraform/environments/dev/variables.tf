@@ -35,3 +35,21 @@ variable "db_instance_class" {
   type        = string
   default     = "db.t4g.micro"
 }
+
+variable "server_desired_count" {
+  description = "Initial Spring Boot task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+}
+
+variable "ai_api_desired_count" {
+  description = "Initial FastAPI API task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+}
+
+variable "ai_worker_desired_count" {
+  description = "Initial FastAPI worker task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+}

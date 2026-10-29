@@ -4,3 +4,6 @@ enable_nat_gateway    = true
 certificate_arn       = null
 db_engine_version     = null
 db_instance_class     = "db.t4g.micro"
+server_desired_count  = 0
+ai_api_desired_count  = 0
+ai_worker_desired_count = 0

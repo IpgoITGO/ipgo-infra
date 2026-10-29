@@ -18,6 +18,10 @@ flowchart LR
     F --> L[LLM]
 ```
 
+Spring Boot, FastAPI service와 FastAPI SQS worker는 각각 ECS Fargate service로 관리합니다. 최초
+Terraform apply에서는 세 service의 desired count를 0으로 두고, 각 애플리케이션의 승인된 배포
+workflow가 immutable commit image를 task definition에 반영한 뒤 필요한 service만 기동합니다.
+
 ## 네트워크
 
 - 2개 Availability Zone을 사용합니다.
@@ -44,3 +48,7 @@ SQS message에는 원본 파일, 비밀번호, 개인정보와 장기 presigned 
 - `ipgo-server`와 `ipgo-ai`는 Docker image를 만들고 ECR에 push합니다.
 - 애플리케이션 배포는 기존 ECS service의 task revision을 갱신합니다.
 - dev 환경 통합 검증 후에만 production 구성을 추가합니다.
+
+GitHub Actions는 repository별 OIDC role을 사용합니다. Terraform plan role은 AWS metadata와 state를
+읽기만 하고 apply role은 보호된 `dev` Environment에서만 dev 자원을 변경합니다. Server와 AI deploy
+role은 각 ECR repository push, ECS task revision 등록과 자기 service 갱신만 허용합니다.

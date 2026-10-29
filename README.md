@@ -12,6 +12,7 @@ IpgoITGO의 AWS 공통 인프라를 Terraform으로 관리하는 공개 저장�
 - 짧은 시나리오·AI 인사이트는 ECS 내부 HTTP로 호출합니다.
 - 업로드 원본은 S3에 저장합니다. Spring은 읽기·쓰기, FastAPI는 읽기 권한만 가집니다.
 - 실제 DB 자격 증명과 API key는 Secrets Manager에서 관리하고 저장소에는 기록하지 않습니다.
+- GitHub Actions는 OIDC 임시 자격 증명만 사용하며 장기 AWS Access Key를 저장하지 않습니다.
 
 자세한 내용은 [아키텍처](docs/architecture.md)와 [데이터 접근 계약](docs/decisions/0002-data-access-contract.md)을 확인합니다.
 
@@ -52,6 +53,11 @@ terraform -chdir=terraform/environments/dev validate
 ```
 
 `plan`과 `apply` 절차는 [운영 문서](docs/operations.md)를 따릅니다. 사용자 승인 전에는 `terraform apply`를 실행하지 않습니다.
+
+최초 bootstrap은 state bucket과 GitHub OIDC 역할을 만듭니다. 이후 `Terraform dev plan`은
+같은 저장소의 `dev` PR만, `Terraform dev apply`는 보호된 GitHub `dev` Environment에서 수동
+확인값과 reviewer 승인을 모두 통과한 경우만 실행됩니다. 초기 ECS service의 task 수는 0이므로
+image와 Secret을 준비하기 전에 애플리케이션이 잘못 기동되지 않습니다.
 
 ## 비용 주의
 
