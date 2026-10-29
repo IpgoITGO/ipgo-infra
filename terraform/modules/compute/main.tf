@@ -240,6 +240,8 @@ resource "aws_ecs_task_definition" "ai_api" {
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = "${var.ai_database_secret_arn}:url::" },
+        # LLM insight runs only in the FastAPI service. The batch worker must not receive this key.
+        { name = "OPENAI_API_KEY", valueFrom = var.ai_openai_secret_arn },
       ]
       healthCheck = {
         command = [
@@ -294,7 +296,6 @@ resource "aws_ecs_task_definition" "ai_worker" {
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = "${var.ai_database_secret_arn}:url::" },
-        { name = "OPENAI_API_KEY", valueFrom = var.ai_openai_secret_arn },
       ]
       logConfiguration = {
         logDriver = "awslogs"
