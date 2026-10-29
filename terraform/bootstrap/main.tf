@@ -57,12 +57,12 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
-  github_oidc_provider_arn = var.github_oidc_provider_arn != null ? var.github_oidc_provider_arn : aws_iam_openid_connect_provider.github[0].arn
-  infra_repository         = "${var.github_owner}/ipgo-infra"
-  server_repository        = "${var.github_owner}/ipgo-server"
-  ai_repository            = "${var.github_owner}/ipgo-ai"
-  account_id               = data.aws_caller_identity.current.account_id
-  partition                = data.aws_partition.current.partition
+  github_oidc_provider_arn  = var.github_oidc_provider_arn != null ? var.github_oidc_provider_arn : aws_iam_openid_connect_provider.github[0].arn
+  infra_repository_subject  = "${var.github_owner}@${var.github_owner_id}/ipgo-infra@${var.github_infra_repository_id}"
+  server_repository_subject = "${var.github_owner}@${var.github_owner_id}/ipgo-server@${var.github_server_repository_id}"
+  ai_repository_subject     = "${var.github_owner}@${var.github_owner_id}/ipgo-ai@${var.github_ai_repository_id}"
+  account_id                = data.aws_caller_identity.current.account_id
+  partition                 = data.aws_partition.current.partition
 }
 
 data "aws_iam_policy_document" "github_plan_assume" {
@@ -84,7 +84,7 @@ data "aws_iam_policy_document" "github_plan_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.infra_repository}:environment:dev-plan"]
+      values   = ["repo:${local.infra_repository_subject}:environment:dev-plan"]
     }
   }
 }
@@ -108,7 +108,7 @@ data "aws_iam_policy_document" "github_apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.infra_repository}:environment:dev"]
+      values   = ["repo:${local.infra_repository_subject}:environment:dev"]
     }
   }
 }
@@ -245,7 +245,7 @@ data "aws_iam_policy_document" "github_server_deploy_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.server_repository}:environment:dev"]
+      values   = ["repo:${local.server_repository_subject}:environment:dev"]
     }
   }
 }
@@ -269,7 +269,7 @@ data "aws_iam_policy_document" "github_ai_deploy_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.ai_repository}:environment:dev"]
+      values   = ["repo:${local.ai_repository_subject}:environment:dev"]
     }
   }
 }

@@ -16,6 +16,30 @@ variable "github_owner" {
   default     = "IpgoITGO"
 }
 
+variable "github_owner_id" {
+  description = "Immutable GitHub organization ID used in OIDC subject claims."
+  type        = string
+  default     = "346794439"
+}
+
+variable "github_infra_repository_id" {
+  description = "Immutable GitHub repository ID for ipgo-infra."
+  type        = string
+  default     = "1437964038"
+}
+
+variable "github_server_repository_id" {
+  description = "Immutable GitHub repository ID for ipgo-server."
+  type        = string
+  default     = "1430767744"
+}
+
+variable "github_ai_repository_id" {
+  description = "Immutable GitHub repository ID for ipgo-ai."
+  type        = string
+  default     = "1430768259"
+}
+
 variable "github_oidc_provider_arn" {
   description = "Existing GitHub Actions OIDC provider ARN. Leave null to create it in this bootstrap stack."
   type        = string

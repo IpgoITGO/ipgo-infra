@@ -11,6 +11,8 @@
 State에는 민감한 값이 포함될 수 있으므로 bucket 이름과 실제 backend 설정은 공개 저장소에 commit하지 않습니다. `backend.hcl.example`을 복사한 `backend.hcl`은 Git에서 제외됩니다.
 
 Bootstrap은 GitHub OIDC provider와 다음 role도 만듭니다.
+Role trust policy는 GitHub의 `use_immutable_subject` 형식에 맞춰 organization과 repository의
+숫자 ID를 사용하므로, 저장소 이름이 이전되거나 재사용돼도 기존 역할을 인수할 수 없습니다.
 
 | role | 사용 주체 | 경계 |
 |---|---|---|
