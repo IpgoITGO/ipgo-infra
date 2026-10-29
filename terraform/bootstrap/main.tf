@@ -202,6 +202,30 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
     resources = ["arn:${local.partition}:iam::${local.account_id}:role/ipgo-dev-*"]
   }
+
+  statement {
+    sid    = "ReadDevUploadBucketMetadata"
+    effect = "Allow"
+    actions = [
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketAcl",
+      "s3:GetBucketCORS",
+      "s3:GetBucketLogging",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetBucketOwnershipControls",
+      "s3:GetBucketPolicy",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:GetBucketReplication",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketTagging",
+      "s3:GetBucketVersioning",
+      "s3:GetBucketWebsite",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:ListBucket",
+    ]
+    resources = ["arn:${local.partition}:s3:::ipgo-dev-uploads-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_plan_state" {
