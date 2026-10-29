@@ -80,6 +80,10 @@ FastAPI login role에는 승인된 `ai_*_v1` view의 `SELECT`만 부여합니다
 업무 DML만 부여하고 schema 변경은 별도 migration role로 실행합니다. 실제 사용자·비밀번호·grant는
 Server migration과 함께 검증한 뒤 입력하며 이 저장소나 Actions log에 남기지 않습니다.
 
+RDS snapshot, role bootstrap, Flyway 적용과 복구 순서는 [RDS migration 운영 런북](rds-migration.md)을
+따릅니다. Spring runtime task가 직접 Flyway를 실행하지 않도록 별도 one-off migration 경로를 먼저
+준비해야 합니다.
+
 ## 검증 순서
 
 ```bash
