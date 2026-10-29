@@ -156,8 +156,8 @@ module "database" {
   engine_version          = var.db_engine_version
   instance_class          = var.db_instance_class
   multi_az                = false
-  deletion_protection     = false
-  skip_final_snapshot     = true
+  deletion_protection     = true
+  skip_final_snapshot     = false
   backup_retention_period = 7
   tags                    = local.common_tags
 }

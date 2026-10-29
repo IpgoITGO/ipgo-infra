@@ -24,6 +24,7 @@ one-off task만 사용하고, 작업이 끝나면 task가 정상 종료돼야 �
 - [ ] Spring task에 `SPRING_FLYWAY_ENABLED=false`가 설정됨
 - [ ] 세 login role의 인증정보가 승인된 절차로 Secrets Manager에 설정됨
 - [ ] Server·AI ECS service의 desired count가 0임
+- [ ] RDS deletion protection과 final snapshot이 활성화됨
 - [ ] 공식 AWS MCP의 `GetCallerIdentity`로 승인된 계정과 서울 리전을 다시 확인함
 
 위 항목 중 하나라도 충족되지 않으면 snapshot이나 migration을 시작하지 않습니다.
