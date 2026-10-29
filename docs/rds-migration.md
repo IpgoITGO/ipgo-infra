@@ -33,7 +33,7 @@ one-off task만 사용하고, 작업이 끝나면 task가 정상 종료돼야 �
 ## 1. Migration 전 수동 snapshot
 
 1. `DescribeDBInstances`로 대상 identifier, `available` 상태, engine version, Single-AZ 여부를 확인합니다.
-2. UTC 기준 `ipgo-dev-postgres-pre-v13-YYYYMMDDHHMMSS` 이름으로 `CreateDBSnapshot`을 한 번 호출합니다.
+2. UTC 기준 `ipgo-dev-postgres-pre-v13-YYYYMMDD-HHMMSS` 이름으로 `CreateDBSnapshot`을 한 번 호출합니다.
 3. 같은 snapshot identifier를 `DescribeDBSnapshots`로 조회해 `available`이 될 때까지 기다립니다.
 4. source DB identifier, engine version, 생성 시각과 `available` 상태를 작업 기록에 남깁니다.
 
