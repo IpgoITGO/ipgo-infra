@@ -61,6 +61,7 @@ jobs:
           terraform -chdir=terraform/environments/dev plan \
             -input=false \
             -lock=false \
+            -no-color \
             -detailed-exitcode \
             -out=dev.tfplan \
             > "$RUNNER_TEMP/terraform-plan.log" 2>&1
@@ -68,6 +69,12 @@ jobs:
           set -e
           if [ "$status" -eq 1 ]; then
             echo "::error::Terraform plan failed. The detailed plan is intentionally not published from this public repository."
+            sed -n 's/^Error: /Terraform error: /p' "$RUNNER_TEMP/terraform-plan.log" \
+              | head -n 5 \
+              | sed -E 's/arn:[^[:space:]]+/[redacted-arn]/g; s/[0-9]{12}/[redacted-account]/g; s/\([^)]*\)/([redacted])/g' \
+              | while IFS= read -r summary; do
+                  echo "::error::$summary"
+                done
             exit 1
           fi
           if [ "$status" -eq 2 ]; then
@@ -87,4 +94,3 @@ jobs:
               ", replace=" + (($actions | map(select(. == "delete,create" or . == "create,delete")) | length) | tostring) +
               ", delete=" + (($actions | map(select(. == "delete")) | length) | tostring)'
           echo "Terraform change detected: $CHANGED" >> "$GITHUB_STEP_SUMMARY"
-
