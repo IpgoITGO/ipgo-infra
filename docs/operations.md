@@ -30,14 +30,16 @@ Bootstrap은 GitHub OIDC provider와 다음 role도 만듭니다.
 ```bash
 aws sts get-caller-identity
 cp terraform/bootstrap/bootstrap.auto.tfvars.example terraform/bootstrap/bootstrap.auto.tfvars
-terraform -chdir=terraform/bootstrap init -backend=false
+cp terraform/bootstrap/bootstrap_override.tf.example terraform/bootstrap/bootstrap_override.tf
+terraform -chdir=terraform/bootstrap init -reconfigure
 terraform -chdir=terraform/bootstrap plan -out=bootstrap.tfplan
 terraform -chdir=terraform/bootstrap apply bootstrap.tfplan
 terraform -chdir=terraform/bootstrap output
 ```
 
 출력된 bucket 이름을 `terraform/bootstrap/backend.hcl`에 넣은 뒤 local bootstrap state를 즉시 같은
-bucket으로 옮깁니다.
+bucket으로 옮깁니다. migration 전에는 local state를 별도 보안 경로에 백업하고,
+`terraform/bootstrap/bootstrap_override.tf`를 삭제해 원래 S3 backend 선언을 복원합니다.
 
 ```bash
 cp terraform/bootstrap/backend.hcl.example terraform/bootstrap/backend.hcl
