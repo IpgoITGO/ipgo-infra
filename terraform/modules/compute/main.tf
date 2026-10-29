@@ -210,6 +210,7 @@ resource "aws_ecs_task_definition" "server" {
         { name = "SPRING_FLYWAY_ENABLED", value = "false" },
       ]
       secrets = [
+        { name = "IPGO_JWT_SECRET", valueFrom = var.server_jwt_secret_arn },
         { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = "${var.server_database_secret_arn}:password::" },
         { name = "SPRING_DATASOURCE_URL", valueFrom = "${var.server_database_secret_arn}:url::" },
         { name = "SPRING_DATASOURCE_USERNAME", valueFrom = "${var.server_database_secret_arn}:username::" },
