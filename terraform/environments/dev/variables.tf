@@ -11,9 +11,9 @@ variable "availability_zones" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Create a billable NAT Gateway for private ECS outbound access."
+  description = "Create a billable NAT Gateway and keep ECS tasks in private application subnets. Disabled by default for the budget-limited dev environment."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "certificate_arn" {
@@ -24,14 +24,31 @@ variable "certificate_arn" {
 }
 
 variable "db_engine_version" {
-  description = "PostgreSQL version available in the target Region. Pin before the first apply."
+  description = "PostgreSQL version verified as orderable in the target Region."
   type        = string
-  default     = null
-  nullable    = true
+  default     = "16.15"
 }
 
 variable "db_instance_class" {
   description = "Development RDS instance class."
   type        = string
   default     = "db.t4g.micro"
+}
+
+variable "server_desired_count" {
+  description = "Initial Spring Boot task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+}
+
+variable "ai_api_desired_count" {
+  description = "Initial FastAPI API task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+}
+
+variable "ai_worker_desired_count" {
+  description = "Initial FastAPI worker task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
 }

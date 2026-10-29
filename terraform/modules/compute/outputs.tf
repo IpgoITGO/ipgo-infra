@@ -37,3 +37,27 @@ output "alb_dns_name" {
 output "server_target_group_arn" {
   value = aws_lb_target_group.server.arn
 }
+
+output "server_service_name" {
+  value = aws_ecs_service.server.name
+}
+
+output "ai_api_service_name" {
+  value = aws_ecs_service.ai_api.name
+}
+
+output "ai_worker_service_name" {
+  value = aws_ecs_service.ai_worker.name
+}
+
+output "server_task_definition_family" {
+  value = aws_ecs_task_definition.server.family
+}
+
+output "ai_api_task_definition_family" {
+  value = aws_ecs_task_definition.ai_api.family
+}
+
+output "ai_worker_task_definition_family" {
+  value = aws_ecs_task_definition.ai_worker.family
+}

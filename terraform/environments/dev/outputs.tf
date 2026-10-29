@@ -47,3 +47,27 @@ output "server_task_role_arn" {
 output "ai_task_role_arn" {
   value = module.identity.ai_task_role_arn
 }
+
+output "server_service_name" {
+  value = module.compute.server_service_name
+}
+
+output "ai_api_service_name" {
+  value = module.compute.ai_api_service_name
+}
+
+output "ai_worker_service_name" {
+  value = module.compute.ai_worker_service_name
+}
+
+output "server_task_definition_family" {
+  value = module.compute.server_task_definition_family
+}
+
+output "ai_api_task_definition_family" {
+  value = module.compute.ai_api_task_definition_family
+}
+
+output "ai_worker_task_definition_family" {
+  value = module.compute.ai_worker_task_definition_family
+}

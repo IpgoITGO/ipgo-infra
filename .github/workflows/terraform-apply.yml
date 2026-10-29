@@ -1,0 +1,86 @@
+name: Terraform dev apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type APPLY_DEV after reviewing cost, rollback and a current plan"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-dev-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.ref == 'refs/heads/dev' &&
+      inputs.confirmation == 'APPLY_DEV' &&
+      vars.AWS_ACCOUNT_ID != '' &&
+      vars.AWS_APPLY_ROLE_ARN != '' &&
+      vars.TF_STATE_BUCKET != ''
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.17.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: ipgo-infra-apply
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity --query Arn --output text >/dev/null
+      - name: Configure backend
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          {
+            echo "bucket = \"$TF_STATE_BUCKET\""
+            echo 'key = "environments/dev/terraform.tfstate"'
+            echo 'region = "ap-northeast-2"'
+            echo 'encrypt = true'
+            echo 'use_lockfile = true'
+          } > terraform/environments/dev/backend.hcl
+      - name: Initialize and validate
+        run: |
+          terraform -chdir=terraform/environments/dev init -backend-config=backend.hcl -input=false
+          terraform -chdir=terraform/environments/dev validate
+      - name: Create approved plan
+        shell: bash
+        run: |
+          set +e
+          terraform -chdir=terraform/environments/dev plan \
+            -input=false \
+            -out=dev.tfplan \
+            > "$RUNNER_TEMP/terraform-plan.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Terraform plan failed. Detailed output is not published from this public repository."
+            exit 1
+          fi
+      - name: Apply approved plan
+        shell: bash
+        run: |
+          set +e
+          terraform -chdir=terraform/environments/dev apply \
+            -input=false \
+            -auto-approve \
+            dev.tfplan \
+            > "$RUNNER_TEMP/terraform-apply.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Terraform apply failed. Inspect AWS and the protected runner log before retrying."
+            exit 1
+          fi
+          echo "Approved dev apply completed." >> "$GITHUB_STEP_SUMMARY"

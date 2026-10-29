@@ -156,8 +156,8 @@ module "database" {
   engine_version          = var.db_engine_version
   instance_class          = var.db_instance_class
   multi_az                = false
-  deletion_protection     = false
-  skip_final_snapshot     = true
+  deletion_protection     = true
+  skip_final_snapshot     = false
   backup_retention_period = 7
   tags                    = local.common_tags
 }
@@ -178,15 +178,41 @@ resource "aws_secretsmanager_secret" "ai_database" {
   tags = local.common_tags
 }
 
+resource "aws_secretsmanager_secret" "ai_openai" {
+  name                    = "/ipgo/dev/ai-openai-api-key"
+  description             = "OpenAI API key for FastAPI; value is provisioned out of band"
+  recovery_window_in_days = 7
+
+  tags = local.common_tags
+}
+
 module "compute" {
   source = "../../modules/compute"
 
-  name_prefix           = local.name_prefix
-  vpc_id                = module.network.vpc_id
-  public_subnet_ids     = module.network.public_subnet_ids
-  alb_security_group_id = aws_security_group.alb.id
-  certificate_arn       = var.certificate_arn
-  tags                  = local.common_tags
+  name_prefix                = local.name_prefix
+  aws_region                 = var.aws_region
+  vpc_id                     = module.network.vpc_id
+  public_subnet_ids          = module.network.public_subnet_ids
+  task_subnet_ids            = var.enable_nat_gateway ? module.network.app_subnet_ids : module.network.public_subnet_ids
+  task_assign_public_ip      = !var.enable_nat_gateway
+  alb_security_group_id      = aws_security_group.alb.id
+  server_security_group_id   = aws_security_group.server.id
+  ai_security_group_id       = aws_security_group.ai.id
+  server_execution_role_arn  = module.identity.server_execution_role_arn
+  server_task_role_arn       = module.identity.server_task_role_arn
+  ai_execution_role_arn      = module.identity.ai_execution_role_arn
+  ai_task_role_arn           = module.identity.ai_task_role_arn
+  server_database_secret_arn = aws_secretsmanager_secret.server_database.arn
+  ai_database_secret_arn     = aws_secretsmanager_secret.ai_database.arn
+  ai_openai_secret_arn       = aws_secretsmanager_secret.ai_openai.arn
+  upload_bucket_name         = module.storage.bucket_name
+  jobs_queue_url             = module.messaging.jobs_queue_url
+  results_queue_url          = module.messaging.results_queue_url
+  server_desired_count       = var.server_desired_count
+  ai_api_desired_count       = var.ai_api_desired_count
+  ai_worker_desired_count    = var.ai_worker_desired_count
+  certificate_arn            = var.certificate_arn
+  tags                       = local.common_tags
 }
 
 module "identity" {
@@ -201,6 +227,7 @@ module "identity" {
   ]
   ai_secret_arns = [
     aws_secretsmanager_secret.ai_database.arn,
+    aws_secretsmanager_secret.ai_openai.arn,
   ]
   tags = local.common_tags
 }

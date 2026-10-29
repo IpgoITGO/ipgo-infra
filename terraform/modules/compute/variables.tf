@@ -13,9 +13,118 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "task_subnet_ids" {
+  description = "Subnet IDs for ECS tasks. Use public subnets when NAT is disabled and private application subnets when NAT is enabled."
+  type        = list(string)
+}
+
+variable "task_assign_public_ip" {
+  description = "Assign public IP addresses to ECS tasks so they can reach AWS services and external APIs without a NAT Gateway."
+  type        = bool
+  default     = false
+}
+
 variable "alb_security_group_id" {
   description = "ALB security group ID."
   type        = string
+}
+
+variable "server_security_group_id" {
+  description = "Security group attached to Spring Boot tasks."
+  type        = string
+}
+
+variable "ai_security_group_id" {
+  description = "Security group attached to FastAPI tasks."
+  type        = string
+}
+
+variable "server_execution_role_arn" {
+  description = "Spring Boot ECS execution role ARN."
+  type        = string
+}
+
+variable "server_task_role_arn" {
+  description = "Spring Boot application task role ARN."
+  type        = string
+}
+
+variable "ai_execution_role_arn" {
+  description = "FastAPI ECS execution role ARN."
+  type        = string
+}
+
+variable "ai_task_role_arn" {
+  description = "FastAPI application task role ARN."
+  type        = string
+}
+
+variable "server_database_secret_arn" {
+  description = "Secrets Manager JSON secret with url, username and password for Spring Boot."
+  type        = string
+}
+
+variable "ai_database_secret_arn" {
+  description = "Secrets Manager JSON secret with a read-only url field for FastAPI."
+  type        = string
+}
+
+variable "ai_openai_secret_arn" {
+  description = "Secrets Manager secret containing the OpenAI API key as a plain string."
+  type        = string
+}
+
+variable "aws_region" {
+  description = "AWS Region exposed to application containers."
+  type        = string
+}
+
+variable "upload_bucket_name" {
+  description = "Private upload bucket read by both applications."
+  type        = string
+}
+
+variable "jobs_queue_url" {
+  description = "SQS engine jobs queue URL."
+  type        = string
+}
+
+variable "results_queue_url" {
+  description = "SQS engine results queue URL."
+  type        = string
+}
+
+variable "server_desired_count" {
+  description = "Initial Spring Boot task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.server_desired_count >= 0
+    error_message = "server_desired_count must be zero or greater."
+  }
+}
+
+variable "ai_api_desired_count" {
+  description = "Initial FastAPI service task count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.ai_api_desired_count >= 0
+    error_message = "ai_api_desired_count must be zero or greater."
+  }
+}
+
+variable "ai_worker_desired_count" {
+  description = "Initial FastAPI SQS worker count. Keep zero until image and secrets are ready."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.ai_worker_desired_count >= 0
+    error_message = "ai_worker_desired_count must be zero or greater."
+  }
 }
 
 variable "certificate_arn" {
