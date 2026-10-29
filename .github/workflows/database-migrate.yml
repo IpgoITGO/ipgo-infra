@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       snapshot_id:
-        description: "Available pre-migration snapshot identifier"
+        description: "Available pre-migration snapshot identifier (YYYYMMDD-HHMMSS)"
         required: true
         type: string
       server_commit_sha:
@@ -44,7 +44,7 @@ jobs:
             echo "::error::server_commit_sha must be a full lowercase Git commit SHA."
             exit 1
           fi
-          if [[ ! "$SNAPSHOT_ID" =~ ^ipgo-dev-postgres-pre-v13-[0-9]{14}$ ]]; then
+          if [[ ! "$SNAPSHOT_ID" =~ ^ipgo-dev-postgres-pre-v13-[0-9]{8}-[0-9]{6}$ ]]; then
             echo "::error::snapshot_id does not match the approved dev snapshot format."
             exit 1
           fi
