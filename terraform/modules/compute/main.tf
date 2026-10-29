@@ -329,9 +329,9 @@ resource "aws_ecs_service" "server" {
   }
 
   network_configuration {
-    subnets          = var.app_subnet_ids
+    subnets          = var.task_subnet_ids
     security_groups  = [var.server_security_group_id]
-    assign_public_ip = false
+    assign_public_ip = var.task_assign_public_ip
   }
 
   load_balancer {
@@ -369,9 +369,9 @@ resource "aws_ecs_service" "ai_api" {
   }
 
   network_configuration {
-    subnets          = var.app_subnet_ids
+    subnets          = var.task_subnet_ids
     security_groups  = [var.ai_security_group_id]
-    assign_public_ip = false
+    assign_public_ip = var.task_assign_public_ip
   }
 
   service_connect_configuration {
@@ -413,9 +413,9 @@ resource "aws_ecs_service" "ai_worker" {
   }
 
   network_configuration {
-    subnets          = var.app_subnet_ids
+    subnets          = var.task_subnet_ids
     security_groups  = [var.ai_security_group_id]
-    assign_public_ip = false
+    assign_public_ip = var.task_assign_public_ip
   }
 
   lifecycle {

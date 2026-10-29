@@ -13,9 +13,15 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
-variable "app_subnet_ids" {
-  description = "Private subnet IDs for ECS tasks."
+variable "task_subnet_ids" {
+  description = "Subnet IDs for ECS tasks. Use public subnets when NAT is disabled and private application subnets when NAT is enabled."
   type        = list(string)
+}
+
+variable "task_assign_public_ip" {
+  description = "Assign public IP addresses to ECS tasks so they can reach AWS services and external APIs without a NAT Gateway."
+  type        = bool
+  default     = false
 }
 
 variable "alb_security_group_id" {

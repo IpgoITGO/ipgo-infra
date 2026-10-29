@@ -11,9 +11,9 @@ variable "availability_zones" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Create a billable NAT Gateway for private ECS outbound access."
+  description = "Create a billable NAT Gateway and keep ECS tasks in private application subnets. Disabled by default for the budget-limited dev environment."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "certificate_arn" {

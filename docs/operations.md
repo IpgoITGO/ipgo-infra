@@ -101,12 +101,31 @@ terraform -chdir=terraform/environments/dev plan -out=dev.tfplan
 
 Plan 파일은 Secret을 포함할 수 있으므로 commit하거나 공개 artifact로 올리지 않습니다.
 
+## Dev 월간 비용 가드레일
+
+2026-10-29 AWS 공식 Pricing API의 서울 리전 단가와 월 730시간을 기준으로 한 초기 추정입니다.
+가격은 바뀔 수 있으므로 apply 직전에 다시 조회합니다.
+
+| 항목 | 계산 | 월 예상 |
+|---|---:|---:|
+| ALB | `$0.0225 × 730시간` | `$16.43` |
+| ALB public IPv4 최소 2개 | `$0.005 × 2 × 730시간` | `$7.30` |
+| RDS `db.t4g.micro` | `$0.025 × 730시간` | `$18.25` |
+| RDS GP3 20GiB | `$0.131 × 20GiB` | `$2.62` |
+| 기본 고정비 |  | **약 `$44.60`** |
+
+NAT Gateway를 활성화하면 시간당 `$0.059`, 월 약 `$43.07`이 추가되므로 월 50달러 dev 한도에서는
+기본값을 `false`로 유지합니다. 세 ECS task를 동시에 실행할 때 Fargate와 task public IPv4의 합계는
+시간당 약 `$0.12856`이며, ALB LCU·로그·데이터 전송을 제외하면 월 약 42시간이 남는 예산입니다.
+실제 운영은 여유분을 두고 월 25시간 이하를 1차 기준으로 사용하며 Cost Explorer에서 누적액을
+확인합니다.
+
 ## Apply 승인 조건
 
 다음을 정리해 사용자 승인을 받은 뒤에만 apply합니다.
 
 1. 생성·변경·삭제되는 자원
-2. 월별 고정 비용이 예상되는 NAT Gateway, ALB, RDS, ECS
+2. 월별 고정 비용이 예상되는 ALB와 RDS, 선택적으로 활성화하는 NAT Gateway, 실행 시간만큼 과금되는 ECS
 3. 데이터와 사용자 영향
 4. 검증 결과
 5. 실패 시 rollback 또는 destroy 범위

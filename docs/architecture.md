@@ -25,11 +25,12 @@ workflow가 immutable commit image를 task definition에 반영한 뒤 필요한
 ## 네트워크
 
 - 2개 Availability Zone을 사용합니다.
-- public subnet에는 ALB와 dev용 단일 NAT Gateway를 둡니다.
-- private app subnet에는 Spring Boot와 FastAPI ECS task를 둡니다.
+- public subnet에는 ALB를 두고, dev ECS task는 실행 중에만 공인 IP를 받아 외부 통신합니다.
+- private app subnet은 NAT Gateway를 명시적으로 활성화하는 환경에서 ECS task에 사용합니다.
 - isolated DB subnet에는 RDS PostgreSQL을 둡니다.
 - 외부에서 RDS와 FastAPI로 직접 접근할 수 없습니다.
-- dev는 비용 절감을 위해 NAT Gateway 하나를 공유합니다. 운영 환경의 가용성 정책은 별도로 결정합니다.
+- dev는 월 50달러 한도를 위해 NAT Gateway를 기본으로 만들지 않습니다. ECS task에 공인 IP가 있어도
+  보안 그룹의 제한된 진입 규칙만 적용되며, 운영 환경의 가용성·egress 정책은 별도로 결정합니다.
 
 ## 데이터 흐름
 

@@ -61,4 +61,7 @@ image와 Secret을 준비하기 전에 애플리케이션이 잘못 기동되지
 
 ## 비용 주의
 
-개발 환경 코드에는 private ECS task의 외부 통신을 위한 NAT Gateway, RDS, ALB가 포함됩니다. 이 자원은 생성된 동안 고정 비용이 발생할 수 있으므로 실제 apply 전에 예상 비용과 종료 시점을 검토해야 합니다.
+개발 환경은 월 50달러 한도를 지키기 위해 NAT Gateway를 기본으로 만들지 않습니다. ECS task는 필요한
+시간에만 public subnet에서 공인 IP를 받아 외부 통신하고, 보안 그룹은 ALB→Spring Boot와
+Spring Boot→FastAPI 진입만 허용합니다. ALB와 RDS는 생성된 동안 고정 비용이 발생하므로 실제
+apply 전에 예상 비용과 종료 시점을 검토해야 합니다.

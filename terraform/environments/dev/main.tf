@@ -193,7 +193,8 @@ module "compute" {
   aws_region                 = var.aws_region
   vpc_id                     = module.network.vpc_id
   public_subnet_ids          = module.network.public_subnet_ids
-  app_subnet_ids             = module.network.app_subnet_ids
+  task_subnet_ids            = var.enable_nat_gateway ? module.network.app_subnet_ids : module.network.public_subnet_ids
+  task_assign_public_ip      = !var.enable_nat_gateway
   alb_security_group_id      = aws_security_group.alb.id
   server_security_group_id   = aws_security_group.server.id
   ai_security_group_id       = aws_security_group.ai.id

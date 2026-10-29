@@ -1,6 +1,6 @@
 aws_region            = "ap-northeast-2"
 availability_zones    = ["ap-northeast-2a", "ap-northeast-2c"]
-enable_nat_gateway    = true
+enable_nat_gateway    = false
 certificate_arn       = null
 db_engine_version     = null
 db_instance_class     = "db.t4g.micro"
