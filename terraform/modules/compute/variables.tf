@@ -106,6 +106,11 @@ variable "server_database_secret_arn" {
   type        = string
 }
 
+variable "server_jwt_secret_arn" {
+  description = "Secrets Manager secret containing the Spring JWT signing secret as a plain string."
+  type        = string
+}
+
 variable "ai_database_secret_arn" {
   description = "Secrets Manager JSON secret with read-only url, username and password fields for FastAPI and verification."
   type        = string

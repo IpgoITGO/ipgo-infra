@@ -194,6 +194,14 @@ resource "aws_secretsmanager_secret" "server_database" {
   tags = local.common_tags
 }
 
+resource "aws_secretsmanager_secret" "server_jwt" {
+  name                    = "/ipgo/dev/server-jwt-secret"
+  description             = "Spring JWT signing secret; value is provisioned out of band"
+  recovery_window_in_days = 7
+
+  tags = local.common_tags
+}
+
 resource "aws_secretsmanager_secret" "ai_database" {
   name                    = "/ipgo/dev/ai-database"
   description             = "FastAPI read-only database credentials; value is provisioned out of band"
@@ -243,6 +251,7 @@ module "compute" {
   database_master_secret_arn            = module.database.master_secret_arn
   database_migrator_secret_arn          = aws_secretsmanager_secret.database_migrator.arn
   server_database_secret_arn            = aws_secretsmanager_secret.server_database.arn
+  server_jwt_secret_arn                 = aws_secretsmanager_secret.server_jwt.arn
   ai_database_secret_arn                = aws_secretsmanager_secret.ai_database.arn
   ai_openai_secret_arn                  = aws_secretsmanager_secret.ai_openai.arn
   upload_bucket_name                    = module.storage.bucket_name
@@ -264,6 +273,7 @@ module "identity" {
   results_queue_arn = module.messaging.results_queue_arn
   server_secret_arns = [
     aws_secretsmanager_secret.server_database.arn,
+    aws_secretsmanager_secret.server_jwt.arn,
   ]
   ai_secret_arns = [
     aws_secretsmanager_secret.ai_database.arn,

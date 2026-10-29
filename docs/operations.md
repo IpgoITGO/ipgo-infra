@@ -73,6 +73,7 @@ Terraform은 Secret container만 만들고 값은 만들지 않습니다. 실제
 Secrets Manager에 직접 입력합니다.
 
 - `/ipgo/dev/server-database`: `{"url":"jdbc:postgresql://...","username":"...","password":"..."}`
+- `/ipgo/dev/server-jwt-secret`: Spring JWT 서명에 사용하는 충분히 긴 무작위 원문
 - `/ipgo/dev/ai-database`: `{"url":"postgresql://..."}`. 조회 전용 login role만 사용
 - `/ipgo/dev/ai-openai-api-key`: OpenAI API key 원문
 
