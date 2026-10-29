@@ -387,6 +387,7 @@ data "aws_iam_policy_document" "github_server_deploy" {
     effect = "Allow"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
@@ -429,6 +430,7 @@ data "aws_iam_policy_document" "github_ai_deploy" {
     effect = "Allow"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
