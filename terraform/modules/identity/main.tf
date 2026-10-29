@@ -1,5 +1,17 @@
 locals {
-  services = toset(["server", "ai"])
+  services = toset([
+    "server",
+    "ai",
+    "database-bootstrap",
+    "database-migrate",
+    "database-verify",
+  ])
+
+  database_secret_arns = {
+    database-bootstrap = var.database_bootstrap_secret_arns
+    database-migrate   = var.database_migrate_secret_arns
+    database-verify    = var.database_verify_secret_arns
+  }
 }
 
 data "aws_iam_policy_document" "ecs_task_assume" {
@@ -64,6 +76,27 @@ resource "aws_iam_role_policy" "ai_secrets" {
   name   = "secrets"
   role   = aws_iam_role.execution["ai"].id
   policy = data.aws_iam_policy_document.ai_secrets[0].json
+}
+
+data "aws_iam_policy_document" "database_secrets" {
+  for_each = {
+    for service, secret_arns in local.database_secret_arns : service => secret_arns
+    if length(secret_arns) > 0
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = each.value
+  }
+}
+
+resource "aws_iam_role_policy" "database_secrets" {
+  for_each = data.aws_iam_policy_document.database_secrets
+
+  name   = "secrets"
+  role   = aws_iam_role.execution[each.key].id
+  policy = each.value.json
 }
 
 resource "aws_iam_role" "server_task" {

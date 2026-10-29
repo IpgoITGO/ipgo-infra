@@ -14,12 +14,20 @@ output "ai_repository_url" {
   value = aws_ecr_repository.ai.repository_url
 }
 
+output "database_repository_url" {
+  value = aws_ecr_repository.database.repository_url
+}
+
 output "server_log_group_name" {
   value = aws_cloudwatch_log_group.server.name
 }
 
 output "ai_log_group_name" {
   value = aws_cloudwatch_log_group.ai.name
+}
+
+output "database_log_group_name" {
+  value = aws_cloudwatch_log_group.database.name
 }
 
 output "service_connect_namespace_arn" {
@@ -60,4 +68,16 @@ output "ai_api_task_definition_family" {
 
 output "ai_worker_task_definition_family" {
   value = aws_ecs_task_definition.ai_worker.family
+}
+
+output "database_bootstrap_task_definition_family" {
+  value = aws_ecs_task_definition.database_bootstrap.family
+}
+
+output "database_migrate_task_definition_family" {
+  value = aws_ecs_task_definition.database_migrate.family
+}
+
+output "database_verify_task_definition_family" {
+  value = aws_ecs_task_definition.database_verify.family
 }

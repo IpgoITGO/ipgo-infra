@@ -30,6 +30,24 @@ variable "ai_secret_arns" {
   default     = []
 }
 
+variable "database_bootstrap_secret_arns" {
+  description = "Secrets the database bootstrap task may inject, including the RDS administrator."
+  type        = list(string)
+  default     = []
+}
+
+variable "database_migrate_secret_arns" {
+  description = "Secrets the Flyway migration task may inject."
+  type        = list(string)
+  default     = []
+}
+
+variable "database_verify_secret_arns" {
+  description = "Runtime database secrets the permission verification task may inject."
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags applied to resources."
   type        = map(string)
