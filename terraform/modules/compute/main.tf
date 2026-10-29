@@ -28,10 +28,26 @@ resource "aws_ecr_repository" "ai" {
   tags = var.tags
 }
 
+resource "aws_ecr_repository" "database" {
+  name                 = "${var.name_prefix}/database"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = var.tags
+}
+
 resource "aws_ecr_lifecycle_policy" "repositories" {
   for_each = {
-    server = aws_ecr_repository.server.name
-    ai     = aws_ecr_repository.ai.name
+    server   = aws_ecr_repository.server.name
+    ai       = aws_ecr_repository.ai.name
+    database = aws_ecr_repository.database.name
   }
 
   repository = each.value
@@ -69,6 +85,13 @@ resource "aws_cloudwatch_log_group" "server" {
 
 resource "aws_cloudwatch_log_group" "ai" {
   name              = "/ipgo/${var.name_prefix}/ai"
+  retention_in_days = var.log_retention_days
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "database" {
+  name              = "/ipgo/${var.name_prefix}/database"
   retention_in_days = var.log_retention_days
 
   tags = var.tags
@@ -184,6 +207,7 @@ resource "aws_ecs_task_definition" "server" {
         { name = "IPGO_UPLOAD_STORAGE", value = "s3" },
         { name = "SERVER_PORT", value = "8080" },
         { name = "SERVER_SERVLET_SESSION_COOKIE_SECURE", value = "true" },
+        { name = "SPRING_FLYWAY_ENABLED", value = "false" },
       ]
       secrets = [
         { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = "${var.server_database_secret_arn}:password::" },
@@ -200,6 +224,131 @@ resource "aws_ecs_task_definition" "server" {
       }
     }
   ])
+
+  tags = var.tags
+}
+
+resource "aws_ecs_task_definition" "database_bootstrap" {
+  family                   = "${var.name_prefix}-database-bootstrap"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.database_bootstrap_execution_role_arn
+
+  runtime_platform {
+    cpu_architecture        = "X86_64"
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "database"
+    image     = "${aws_ecr_repository.database.repository_url}:bootstrap"
+    essential = true
+    command   = ["bootstrap"]
+    environment = [
+      { name = "DB_HOST", value = var.database_host },
+      { name = "DB_PORT", value = tostring(var.database_port) },
+      { name = "DB_NAME", value = var.database_name },
+    ]
+    secrets = [
+      { name = "DB_ADMIN_USERNAME", valueFrom = "${var.database_master_secret_arn}:username::" },
+      { name = "DB_ADMIN_PASSWORD", valueFrom = "${var.database_master_secret_arn}:password::" },
+      { name = "IPGO_MIGRATOR_PASSWORD", valueFrom = "${var.database_migrator_secret_arn}:password::" },
+      { name = "IPGO_SERVER_PASSWORD", valueFrom = "${var.server_database_secret_arn}:password::" },
+      { name = "IPGO_AI_READER_PASSWORD", valueFrom = "${var.ai_database_secret_arn}:password::" },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.database.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "bootstrap"
+      }
+    }
+  }])
+
+  tags = var.tags
+}
+
+resource "aws_ecs_task_definition" "database_migrate" {
+  family                   = "${var.name_prefix}-database-migrate"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.database_migrate_execution_role_arn
+
+  runtime_platform {
+    cpu_architecture        = "X86_64"
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "database"
+    image     = "${aws_ecr_repository.database.repository_url}:bootstrap"
+    essential = true
+    command   = ["migrate"]
+    environment = [
+      { name = "DB_HOST", value = var.database_host },
+      { name = "DB_PORT", value = tostring(var.database_port) },
+      { name = "DB_NAME", value = var.database_name },
+    ]
+    secrets = [
+      { name = "DB_USERNAME", valueFrom = "${var.database_migrator_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.database_migrator_secret_arn}:password::" },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.database.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "migrate"
+      }
+    }
+  }])
+
+  tags = var.tags
+}
+
+resource "aws_ecs_task_definition" "database_verify" {
+  family                   = "${var.name_prefix}-database-verify"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.database_verify_execution_role_arn
+
+  runtime_platform {
+    cpu_architecture        = "X86_64"
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "database"
+    image     = "${aws_ecr_repository.database.repository_url}:bootstrap"
+    essential = true
+    command   = ["verify"]
+    environment = [
+      { name = "DB_HOST", value = var.database_host },
+      { name = "DB_PORT", value = tostring(var.database_port) },
+      { name = "DB_NAME", value = var.database_name },
+    ]
+    secrets = [
+      { name = "IPGO_SERVER_USERNAME", valueFrom = "${var.server_database_secret_arn}:username::" },
+      { name = "IPGO_SERVER_PASSWORD", valueFrom = "${var.server_database_secret_arn}:password::" },
+      { name = "IPGO_AI_READER_USERNAME", valueFrom = "${var.ai_database_secret_arn}:username::" },
+      { name = "IPGO_AI_READER_PASSWORD", valueFrom = "${var.ai_database_secret_arn}:password::" },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.database.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "verify"
+      }
+    }
+  }])
 
   tags = var.tags
 }

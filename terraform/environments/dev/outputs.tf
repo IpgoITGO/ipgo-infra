@@ -36,6 +36,10 @@ output "ai_repository_url" {
   value = module.compute.ai_repository_url
 }
 
+output "database_repository_url" {
+  value = module.compute.database_repository_url
+}
+
 output "alb_dns_name" {
   value = module.compute.alb_dns_name
 }
@@ -70,4 +74,16 @@ output "ai_api_task_definition_family" {
 
 output "ai_worker_task_definition_family" {
   value = module.compute.ai_worker_task_definition_family
+}
+
+output "database_bootstrap_task_definition_family" {
+  value = module.compute.database_bootstrap_task_definition_family
+}
+
+output "database_migrate_task_definition_family" {
+  value = module.compute.database_migrate_task_definition_family
+}
+
+output "database_verify_task_definition_family" {
+  value = module.compute.database_verify_task_definition_family
 }

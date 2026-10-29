@@ -59,13 +59,55 @@ variable "ai_task_role_arn" {
   type        = string
 }
 
+variable "database_bootstrap_execution_role_arn" {
+  description = "Execution role for the one-off database role bootstrap task."
+  type        = string
+}
+
+variable "database_migrate_execution_role_arn" {
+  description = "Execution role for the one-off Flyway task."
+  type        = string
+}
+
+variable "database_verify_execution_role_arn" {
+  description = "Execution role for the one-off database permission verification task."
+  type        = string
+}
+
+variable "database_host" {
+  description = "Private PostgreSQL hostname used by one-off database tasks."
+  type        = string
+}
+
+variable "database_port" {
+  description = "Private PostgreSQL port."
+  type        = number
+  default     = 5432
+}
+
+variable "database_name" {
+  description = "PostgreSQL database name."
+  type        = string
+  default     = "ipgo"
+}
+
+variable "database_master_secret_arn" {
+  description = "RDS-managed bootstrap administrator secret ARN."
+  type        = string
+}
+
+variable "database_migrator_secret_arn" {
+  description = "Secrets Manager JSON secret for the Flyway login role."
+  type        = string
+}
+
 variable "server_database_secret_arn" {
   description = "Secrets Manager JSON secret with url, username and password for Spring Boot."
   type        = string
 }
 
 variable "ai_database_secret_arn" {
-  description = "Secrets Manager JSON secret with a read-only url field for FastAPI."
+  description = "Secrets Manager JSON secret with read-only url, username and password fields for FastAPI and verification."
   type        = string
 }
 

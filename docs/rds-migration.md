@@ -20,7 +20,7 @@ one-off task만 사용하고, 작업이 끝나면 task가 정상 종료돼야 �
 
 - [ ] Infra `dev`가 승인된 Terraform plan으로 apply되어 RDS 상태가 `available`임
 - [ ] 서울 리전에서 주문 가능한 PostgreSQL 16.x와 `db.t4g.micro`·GP3 조합을 다시 확인함
-- [ ] Server `dev`의 immutable image에 V1~V13 migration과 `database/bootstrap/create_roles.sql`이 포함됨
+- [ ] Server `dev` commit으로 만든 immutable DB image에 V1~V13 migration과 `database/bootstrap/create_roles.sql`이 포함됨
 - [ ] one-off role bootstrap·Flyway task가 private RDS에 연결되며 runtime service와 분리됨
 - [ ] Spring task에 `SPRING_FLYWAY_ENABLED=false`가 설정됨
 - [ ] 세 login role의 인증정보가 승인된 절차로 Secrets Manager에 설정됨
@@ -50,7 +50,13 @@ Single-AZ snapshot 생성 중에는 짧은 I/O 중단이 생길 수 있으므로
 3. `ipgo_migrator` 인증정보를 사용하는 one-off Flyway task에서 target V13으로 `migrate`를 실행합니다.
 4. Flyway task의 종료 코드가 0인지 확인하고 `flyway_schema_history`의 V1~V13이 모두 success인지
    확인합니다. 실패한 migration을 `repair`로 숨기지 않습니다.
-5. migration task definition과 실행한 Server image digest를 작업 기록에 남깁니다.
+5. migration task definition과 실행한 DB image digest를 작업 기록에 남깁니다.
+
+실행은 `Database dev migration` workflow에서만 시작합니다. 승인된 수동 snapshot identifier,
+Server 저장소의 현재 `dev` HEAD와 일치하는 40자리 commit SHA, 확인 문구 `MIGRATE_DEV_V13`을 모두 입력해야 합니다.
+workflow는 snapshot source·상태와 세 ECS service의 desired count 0을 재검증한 뒤 DB 전용 immutable
+image를 만들고 `bootstrap → migrate → verify` task를 순서대로 실행합니다. 앞 단계가 실패하면 다음
+단계를 시작하지 않습니다.
 
 현재 AWS에는 신규 빈 DB가 생성될 예정이므로 최초 실행은 V1부터 V13까지 적용합니다. 이후 V9 데이터가
 있는 환경을 승격할 때도 같은 task를 사용하며, repository의 PostgreSQL 검증 스크립트가 증명한
@@ -96,6 +102,12 @@ AWS 공식 문서:
 ## 현재 상태
 
 - AWS bootstrap state와 GitHub OIDC 역할: 준비됨
-- VPC, RDS, ECR, ECS, Runtime Secret container: 아직 생성되지 않음
-- 수동 RDS snapshot: 대상 DB가 없어 아직 생성할 수 없음
-- Schema migration과 Secret 값 변경: 이 단계에서는 실행하지 않음
+- VPC, private RDS, ECR, ECS와 runtime Secret container: 생성됨
+- Server·AI service desired count: 0
+- migration 전 수동 snapshot: 생성 후 `available` 확인됨
+- runtime Secret 값과 migrator Secret 값: 아직 입력하지 않음
+- Schema migration: 아직 실행하지 않음
+
+DB 실행 경로를 apply하면 custom migrator Secret 1개의 월 고정 요금과 DB image 저장량이 추가됩니다.
+bootstrap·migrate·verify Fargate task는 수동 실행 시간에만 과금되고, 정상 완료 후 상시 실행되지
+않습니다. task 실패 시 반복 실행 전에 원인과 DB 상태를 먼저 확인합니다.

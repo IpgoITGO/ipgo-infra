@@ -115,6 +115,30 @@ resource "aws_security_group" "database" {
   tags = merge(local.common_tags, { Name = "${local.name_prefix}-database" })
 }
 
+resource "aws_security_group" "database_tasks" {
+  name        = "${local.name_prefix}-database-tasks"
+  description = "One-off database bootstrap, migration and verification tasks"
+  vpc_id      = module.network.vpc_id
+
+  tags = merge(local.common_tags, { Name = "${local.name_prefix}-database-tasks" })
+}
+
+resource "aws_vpc_security_group_egress_rule" "database_tasks_outbound" {
+  security_group_id = aws_security_group.database_tasks.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+  description       = "PostgreSQL and AWS services for one-off database tasks"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "database_from_tasks" {
+  security_group_id            = aws_security_group.database.id
+  referenced_security_group_id = aws_security_group.database_tasks.id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+  description                  = "One-off database tasks"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "database_from_server" {
   security_group_id            = aws_security_group.database.id
   referenced_security_group_id = aws_security_group.server.id
@@ -178,6 +202,14 @@ resource "aws_secretsmanager_secret" "ai_database" {
   tags = local.common_tags
 }
 
+resource "aws_secretsmanager_secret" "database_migrator" {
+  name                    = "/ipgo/dev/database-migrator"
+  description             = "Flyway database credentials; value is provisioned out of band"
+  recovery_window_in_days = 7
+
+  tags = local.common_tags
+}
+
 resource "aws_secretsmanager_secret" "ai_openai" {
   name                    = "/ipgo/dev/ai-openai-api-key"
   description             = "OpenAI API key for FastAPI; value is provisioned out of band"
@@ -189,30 +221,38 @@ resource "aws_secretsmanager_secret" "ai_openai" {
 module "compute" {
   source = "../../modules/compute"
 
-  name_prefix                = local.name_prefix
-  aws_region                 = var.aws_region
-  vpc_id                     = module.network.vpc_id
-  public_subnet_ids          = module.network.public_subnet_ids
-  task_subnet_ids            = var.enable_nat_gateway ? module.network.app_subnet_ids : module.network.public_subnet_ids
-  task_assign_public_ip      = !var.enable_nat_gateway
-  alb_security_group_id      = aws_security_group.alb.id
-  server_security_group_id   = aws_security_group.server.id
-  ai_security_group_id       = aws_security_group.ai.id
-  server_execution_role_arn  = module.identity.server_execution_role_arn
-  server_task_role_arn       = module.identity.server_task_role_arn
-  ai_execution_role_arn      = module.identity.ai_execution_role_arn
-  ai_task_role_arn           = module.identity.ai_task_role_arn
-  server_database_secret_arn = aws_secretsmanager_secret.server_database.arn
-  ai_database_secret_arn     = aws_secretsmanager_secret.ai_database.arn
-  ai_openai_secret_arn       = aws_secretsmanager_secret.ai_openai.arn
-  upload_bucket_name         = module.storage.bucket_name
-  jobs_queue_url             = module.messaging.jobs_queue_url
-  results_queue_url          = module.messaging.results_queue_url
-  server_desired_count       = var.server_desired_count
-  ai_api_desired_count       = var.ai_api_desired_count
-  ai_worker_desired_count    = var.ai_worker_desired_count
-  certificate_arn            = var.certificate_arn
-  tags                       = local.common_tags
+  name_prefix                           = local.name_prefix
+  aws_region                            = var.aws_region
+  vpc_id                                = module.network.vpc_id
+  public_subnet_ids                     = module.network.public_subnet_ids
+  task_subnet_ids                       = var.enable_nat_gateway ? module.network.app_subnet_ids : module.network.public_subnet_ids
+  task_assign_public_ip                 = !var.enable_nat_gateway
+  alb_security_group_id                 = aws_security_group.alb.id
+  server_security_group_id              = aws_security_group.server.id
+  ai_security_group_id                  = aws_security_group.ai.id
+  server_execution_role_arn             = module.identity.server_execution_role_arn
+  server_task_role_arn                  = module.identity.server_task_role_arn
+  ai_execution_role_arn                 = module.identity.ai_execution_role_arn
+  ai_task_role_arn                      = module.identity.ai_task_role_arn
+  database_bootstrap_execution_role_arn = module.identity.database_bootstrap_execution_role_arn
+  database_migrate_execution_role_arn   = module.identity.database_migrate_execution_role_arn
+  database_verify_execution_role_arn    = module.identity.database_verify_execution_role_arn
+  database_host                         = module.database.address
+  database_port                         = module.database.port
+  database_name                         = "ipgo"
+  database_master_secret_arn            = module.database.master_secret_arn
+  database_migrator_secret_arn          = aws_secretsmanager_secret.database_migrator.arn
+  server_database_secret_arn            = aws_secretsmanager_secret.server_database.arn
+  ai_database_secret_arn                = aws_secretsmanager_secret.ai_database.arn
+  ai_openai_secret_arn                  = aws_secretsmanager_secret.ai_openai.arn
+  upload_bucket_name                    = module.storage.bucket_name
+  jobs_queue_url                        = module.messaging.jobs_queue_url
+  results_queue_url                     = module.messaging.results_queue_url
+  server_desired_count                  = var.server_desired_count
+  ai_api_desired_count                  = var.ai_api_desired_count
+  ai_worker_desired_count               = var.ai_worker_desired_count
+  certificate_arn                       = var.certificate_arn
+  tags                                  = local.common_tags
 }
 
 module "identity" {
@@ -228,6 +268,19 @@ module "identity" {
   ai_secret_arns = [
     aws_secretsmanager_secret.ai_database.arn,
     aws_secretsmanager_secret.ai_openai.arn,
+  ]
+  database_bootstrap_secret_arns = [
+    module.database.master_secret_arn,
+    aws_secretsmanager_secret.database_migrator.arn,
+    aws_secretsmanager_secret.server_database.arn,
+    aws_secretsmanager_secret.ai_database.arn,
+  ]
+  database_migrate_secret_arns = [
+    aws_secretsmanager_secret.database_migrator.arn,
+  ]
+  database_verify_secret_arns = [
+    aws_secretsmanager_secret.server_database.arn,
+    aws_secretsmanager_secret.ai_database.arn,
   ]
   tags = local.common_tags
 }

@@ -1,0 +1,182 @@
+name: Database dev migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type MIGRATE_DEV_V13 after reviewing the snapshot and rollback path"
+        required: true
+        type: string
+      snapshot_id:
+        description: "Available pre-migration snapshot identifier"
+        required: true
+        type: string
+      server_commit_sha:
+        description: "Merged 40-character ipgo-server commit containing Dockerfile.database"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: database-dev-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      github.ref == 'refs/heads/dev' &&
+      inputs.confirmation == 'MIGRATE_DEV_V13' &&
+      vars.AWS_ACCOUNT_ID != '' &&
+      vars.AWS_APPLY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Validate immutable inputs
+        env:
+          SERVER_COMMIT_SHA: ${{ inputs.server_commit_sha }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: |
+          if [[ ! "$SERVER_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::server_commit_sha must be a full lowercase Git commit SHA."
+            exit 1
+          fi
+          if [[ ! "$SNAPSHOT_ID" =~ ^ipgo-dev-postgres-pre-v13-[0-9]{14}$ ]]; then
+            echo "::error::snapshot_id does not match the approved dev snapshot format."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: IpgoITGO/ipgo-server
+          ref: dev
+          path: server
+          persist-credentials: false
+      - name: Verify the current Server dev commit
+        env:
+          SERVER_COMMIT_SHA: ${{ inputs.server_commit_sha }}
+        run: |
+          if [[ "$(git -C server rev-parse HEAD)" != "$SERVER_COMMIT_SHA" ]]; then
+            echo "::error::server_commit_sha must equal the current ipgo-server dev HEAD."
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: ipgo-database-migrate
+          mask-aws-account-id: true
+      - name: Verify AWS target and safety gates
+        env:
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: |
+          aws sts get-caller-identity --query Arn --output text >/dev/null
+          snapshot_status="$(aws rds describe-db-snapshots \
+            --db-snapshot-identifier "$SNAPSHOT_ID" \
+            --query 'DBSnapshots[0].Status' --output text)"
+          snapshot_source="$(aws rds describe-db-snapshots \
+            --db-snapshot-identifier "$SNAPSHOT_ID" \
+            --query 'DBSnapshots[0].DBInstanceIdentifier' --output text)"
+          if [[ "$snapshot_status" != "available" || "$snapshot_source" != "ipgo-dev-postgres" ]]; then
+            echo "::error::The approved pre-migration snapshot is not available for ipgo-dev-postgres."
+            exit 1
+          fi
+          aws ecs describe-services \
+            --cluster ipgo-dev-cluster \
+            --services ipgo-dev-server ipgo-dev-ai-api ipgo-dev-ai-worker \
+            > "$RUNNER_TEMP/database-services.json"
+          if ! jq -e '
+            (.failures | length) == 0
+            and (.services | length) == 3
+            and all(.services[]; .desiredCount == 0 and .runningCount == 0 and .pendingCount == 0)
+          ' "$RUNNER_TEMP/database-services.json" >/dev/null; then
+            echo "::error::All Server and AI services must be fully stopped."
+            exit 1
+          fi
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd
+        id: login-ecr
+      - name: Build and push immutable database image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SERVER_COMMIT_SHA: ${{ inputs.server_commit_sha }}
+        run: |
+          image_uri="${ECR_REGISTRY}/ipgo-dev/database:${SERVER_COMMIT_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker build --file server/Dockerfile.database --tag "$image_uri" server
+          docker push "$image_uri" >/dev/null
+          echo "IMAGE_URI=$image_uri" >> "$GITHUB_ENV"
+      - name: Register immutable task revisions
+        id: tasks
+        run: |
+          for mode in bootstrap migrate verify; do
+            family="ipgo-dev-database-${mode}"
+            aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query taskDefinition > "$RUNNER_TEMP/${mode}-current.json"
+            jq --arg image "$IMAGE_URI" "
+              del(
+                .taskDefinitionArn,
+                .revision,
+                .status,
+                .requiresAttributes,
+                .compatibilities,
+                .registeredAt,
+                .registeredBy
+              )
+              | .containerDefinitions[0].image = \$image
+            " "$RUNNER_TEMP/${mode}-current.json" > "$RUNNER_TEMP/${mode}-register.json"
+            task_definition_arn="$(aws ecs register-task-definition \
+              --cli-input-json "file://$RUNNER_TEMP/${mode}-register.json" \
+              --query 'taskDefinition.taskDefinitionArn' --output text)"
+            echo "${mode}=${task_definition_arn}" >> "$GITHUB_OUTPUT"
+          done
+      - name: Run bootstrap, migration and permission verification
+        env:
+          BOOTSTRAP_TASK: ${{ steps.tasks.outputs.bootstrap }}
+          MIGRATE_TASK: ${{ steps.tasks.outputs.migrate }}
+          VERIFY_TASK: ${{ steps.tasks.outputs.verify }}
+        run: |
+          subnet_ids="$(aws ec2 describe-subnets \
+            --filters Name=tag:Project,Values=ipgo Name=tag:Environment,Values=dev Name=tag:Tier,Values=public \
+            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')"
+          security_group_id="$(aws ec2 describe-security-groups \
+            --filters Name=group-name,Values=ipgo-dev-database-tasks \
+            --query 'SecurityGroups[0].GroupId' --output text)"
+          if [[ -z "$subnet_ids" || "$subnet_ids" == "None" || \
+                -z "$security_group_id" || "$security_group_id" == "None" ]]; then
+            echo "::error::Database task network configuration was not found."
+            exit 1
+          fi
+          network_configuration="awsvpcConfiguration={subnets=[$subnet_ids],securityGroups=[$security_group_id],assignPublicIp=ENABLED}"
+
+          run_task() {
+            local task_definition="$1"
+            local task_arn
+            local exit_code
+            task_arn="$(aws ecs run-task \
+              --cluster ipgo-dev-cluster \
+              --launch-type FARGATE \
+              --platform-version LATEST \
+              --task-definition "$task_definition" \
+              --network-configuration "$network_configuration" \
+              --query 'tasks[0].taskArn' --output text)"
+            if [[ -z "$task_arn" || "$task_arn" == "None" ]]; then
+              echo "::error::ECS did not start the database task."
+              exit 1
+            fi
+            aws ecs wait tasks-stopped --cluster ipgo-dev-cluster --tasks "$task_arn"
+            exit_code="$(aws ecs describe-tasks \
+              --cluster ipgo-dev-cluster --tasks "$task_arn" \
+              --query "tasks[0].containers[?name=='database'].exitCode | [0]" --output text)"
+            if [[ "$exit_code" != "0" ]]; then
+              echo "::error::A database task failed. Review the protected CloudWatch log stream."
+              exit 1
+            fi
+          }
+
+          run_task "$BOOTSTRAP_TASK"
+          run_task "$MIGRATE_TASK"
+          run_task "$VERIFY_TASK"
+          echo "DB roles, Flyway V1-V13 and runtime permissions verified." >> "$GITHUB_STEP_SUMMARY"
