@@ -140,16 +140,22 @@ data "aws_iam_policy_document" "github_plan_state" {
   }
 
   statement {
-    sid       = "DescribeDevSecrets"
-    effect    = "Allow"
-    actions   = ["secretsmanager:DescribeSecret"]
+    sid    = "DescribeDevSecrets"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+    ]
     resources = ["arn:${local.partition}:secretsmanager:${var.aws_region}:${local.account_id}:secret:/ipgo/dev/*"]
   }
 
   statement {
-    sid       = "ReadDevRepositoryTags"
-    effect    = "Allow"
-    actions   = ["ecr:ListTagsForResource"]
+    sid    = "ReadDevRepositoryTags"
+    effect = "Allow"
+    actions = [
+      "ecr:GetLifecyclePolicy",
+      "ecr:ListTagsForResource",
+    ]
     resources = ["arn:${local.partition}:ecr:${var.aws_region}:${local.account_id}:repository/ipgo-dev/*"]
   }
 }
