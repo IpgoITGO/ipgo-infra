@@ -112,3 +112,34 @@ ALB 제거 후 호스트 장애는 ECS/EC2 복구 또는 새 호스트 검증 �
 DB 전체 복원이나 회원/업로드 삭제를 서버 이전의 기본 롤백 방법으로 사용하지 않는다.
 배포 전후 서비스 수량, task/image digest, 실제 HTTPS·로그인 결과, DB 백업/보호, 경보·예산 상태와
 복구 입력은 비공개 운영 기록과 통합 `docs/status.md`에 남긴다. 비밀번호·토큰·계정별 ARN은 공개 문서에 적지 않는다.
+
+
+## 실제 정제·계산 연결 배포 준비 (IPGO-111 / IPGO-118)
+
+이번 변경안은 기존 개발 주소와 DB를 유지하며 실제 XLSX 정제·계산 결과를 Spring에 저장하는 경로다.
+AI API 한 프로세스에 worker thread 한 개를 함께 실행하고 별도 worker 서비스는 0개로 유지한다.
+실제 적용 전에는 해당 앱 SHA의 메모리·재시도·동시 처리와 PostgreSQL/SQS 통합 검증이 필요하다.
+현재 운영이 real로 전환됐다는 뜻은 아니다. 배포 결과는 연결된 GitHub 이슈에 별도로 기록한다.
+
+- SQS jobs/results/DLQ 총 4개의 최대 메시지 크기만 256KiB에서 1MiB로 늘린다.
+  보관·재시도·권한은 유지하며 Terraform plan에서 4개 in-place 변경만 확인한다.
+- AI 결과는 900,000 UTF-8 bytes를 초과하면 작은 실패 결과를 보내며 원문을 잘라 성공으로 표시하지 않는다.
+  AI의 S3 쓰기 권한이나 새 저장소는 추가하지 않는다.
+- 서버 V14 migration은 작업 outbox, 계산 input hash, 계산 사유의 길이 확장과 조회 전용 view 3개를 추가한다.
+  기존 업무 행·원본·JWT는 초기화하지 않으며, 이전 PROCESSING 행을 자동 재처리하지 않는다.
+- 일반 코드 적용과 DB schema 적용을 구분한다. 실제 RDS 변경은 snapshot 및 복구 입력을 준비하고
+  DB 작업 절차에 따라 서비스 일시 중지·migration·검증·기동을 구체화한 뒤 승인받는다.
+- 실제 계산과 유료 LLM은 별개다. `ENGINE_MODE=real`, `IPGO_EMBEDDED_WORKER_ENABLED=true`로
+  계산을 실행하더라도 LLM 승인/실제 key 없이 OpenAI를 활성화하지 않는다.
+  서버의 `IPGO_ENGINE_ENABLED=true`는 DB/큐 검증을 마친 뒤에만 설정한다.
+- 단일 호스트 workflow의 maintenance 승인과 real capacity 승인은 해당 배포의 검사 결과를 확인한 뒤 선택한다.
+  컨테이너 실행 수·역할·메모리 제한을 임의 확대하지 않는다.
+
+원복은 먼저 새 서버 발송과 AI embedded worker를 끄고 기존 task revision/mock으로 되돌린다.
+추가한 schema는 남겨 기존 데이터 손실을 막으며, 이전 이미지가 새 schema에서 기동하는지 사전 확인한다.
+이미 전송된 작업은 DB jobId와 결과 상태를 대조하며 queue purge/DB 전체 복원을 기본 복구로 쓰지 않는다.
+큐 크기를 줄일 때는 큰 미처리 메시지가 없는지 확인한다.
+
+AWS의 1MiB 지원은 [공식 발표](https://aws.amazon.com/about-aws/whats-new/2025/08/amazon-sqs-max-payload-size-1mib/)와
+[FAQ](https://aws.amazon.com/sqs/faqs/)를 따른다. 메시지는 64KiB 요청 단위로 과금되며,
+이번 변경은 새 상시 리소스를 추가하지 않는다. 실제 사용량은 기존 월 50달러 예산 알림으로 확인한다.

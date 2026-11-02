@@ -3,6 +3,8 @@ resource "aws_sqs_queue" "jobs_dlq" {
   message_retention_seconds = 1209600
   kms_master_key_id         = "alias/aws/sqs"
 
+  max_message_size = var.max_message_size
+
   tags = var.tags
 }
 
@@ -10,6 +12,8 @@ resource "aws_sqs_queue" "results_dlq" {
   name                      = "${var.name_prefix}-results-dlq"
   message_retention_seconds = 1209600
   kms_master_key_id         = "alias/aws/sqs"
+
+  max_message_size = var.max_message_size
 
   tags = var.tags
 }
@@ -26,6 +30,8 @@ resource "aws_sqs_queue" "jobs" {
     maxReceiveCount     = var.max_receive_count
   })
 
+  max_message_size = var.max_message_size
+
   tags = var.tags
 }
 
@@ -40,6 +46,8 @@ resource "aws_sqs_queue" "results" {
     deadLetterTargetArn = aws_sqs_queue.results_dlq.arn
     maxReceiveCount     = var.max_receive_count
   })
+
+  max_message_size = var.max_message_size
 
   tags = var.tags
 }
