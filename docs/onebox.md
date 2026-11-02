@@ -88,7 +88,7 @@ guest shutdown은 stop, EC2와 stack의 삭제 보호를 켰다. 임시 이미�
 서비스와 timer를 설치한 뒤 실제 `MemoryAvailablePercent` 수신까지 확인한다.
 
 Server/AI GitHub 변수 `AWS_DEV_COMPUTE_MODE=onebox`는 ARM runner와 새 ECS 서비스를 선택한다.
-기존 task definition의 메모리·IAM·DB 설정을 이어받고 이미지부터 바꾼다. AI는 mock API 최대 1개와 worker 0개만 허용한다.
+기존 task definition의 메모리·IAM·DB 설정을 이어받고 이미지부터 바꾼다. AI API는 최대 1개, 독립 worker 서비스는 0개로 유지한다. real 모드의 worker는 API 프로세스 안에서 한 개만 실행한다.
 한 호스트에서 같은 포트를 쓰므로 이후 코드 배포에는 짧은 서비스 재시작이 필요하다.
 배포 workflow는 검토 후 `maintenance_approved`를 선택해야 진행한다. 이번 최초 이전은 기존 서버를 병행해 연결을 넘긴다.
 
@@ -119,7 +119,7 @@ DB 전체 복원이나 회원/업로드 삭제를 서버 이전의 기본 롤백
 이번 변경안은 기존 개발 주소와 DB를 유지하며 실제 XLSX 정제·계산 결과를 Spring에 저장하는 경로다.
 AI API 한 프로세스에 worker thread 한 개를 함께 실행하고 별도 worker 서비스는 0개로 유지한다.
 실제 적용 전에는 해당 앱 SHA의 메모리·재시도·동시 처리와 PostgreSQL/SQS 통합 검증이 필요하다.
-현재 운영이 real로 전환됐다는 뜻은 아니다. 배포 결과는 연결된 GitHub 이슈에 별도로 기록한다.
+2026-11-02에 Server PR74와 AI PR52의 검증한 tree를 개발 환경에 적용했다. 아래 준비 절차와 실제 확인 범위는 구분하며, 후속 검증 상태는 연결된 GitHub 이슈를 따른다.
 
 - SQS jobs/results/DLQ 총 4개의 최대 메시지 크기만 256KiB에서 1MiB로 늘린다.
   보관·재시도·권한은 유지하며 Terraform plan에서 4개 in-place 변경만 확인한다.
@@ -143,3 +143,30 @@ AI API 한 프로세스에 worker thread 한 개를 함께 실행하고 별도 w
 AWS의 1MiB 지원은 [공식 발표](https://aws.amazon.com/about-aws/whats-new/2025/08/amazon-sqs-max-payload-size-1mib/)와
 [FAQ](https://aws.amazon.com/sqs/faqs/)를 따른다. 메시지는 64KiB 요청 단위로 과금되며,
 이번 변경은 새 상시 리소스를 추가하지 않는다. 실제 사용량은 기존 월 50달러 예산 알림으로 확인한다.
+
+
+## 단일 호스트 배포 시 AZ 재조정 설정
+
+단일 호스트 서비스는 `minimumHealthyPercent=0`, `maximumPercent=100`으로 재시작한다.
+ECS의 `availabilityZoneRebalancing`이 `ENABLED`이면 maximumPercent 100 이하를 거부하므로,
+서비스 생성·복구 시 두 onebox 서비스 모두 **`availabilityZoneRebalancing=DISABLED`**를 명시한다.
+기존 서비스는 공식 AWS MCP의 UpdateService로 같은 값을 설정한 뒤 재시작한다.
+단일 호스트에 태스크를 두 개씩 올리거나 메모리·포트 제한을 늘려 해결하지 않는다.
+
+2026-11-02 첫 실제 연결 배포는 이 설정 충돌로 GitHub Actions의 서비스 재시작 단계에서 실패했다.
+승인된 앱 tree와 빌드된 ARM 이미지 digest를 바꾸지 않고 AZ 재조정만 끈 뒤,
+공식 AWS MCP로 새 task definition을 등록·기동했다. 서비스에 이 설정이 유지되면 기존 배포 workflow의
+min0/max100 재시작을 사용할 수 있다. 설정 변경과 앱 SHA 승인을 구분하며 최신 dev로 임의 교체하지 않는다.
+
+- 실제 배포 source: Server `011863a804f307ca7a2de50ca95f9cfbd24d66eb`,
+  AI `c77e24292c970d2f0f855cb63f474099b52d39df`(engineVersion 0.3.0).
+  각각 승인된 PR74 `ba965d7`, PR52 `1b1161d`와 Git tree가 같다.
+- V14는 사전 RDS snapshot 후 migrate/verify workflow로 적용했다. 기존 DB bootstrap과 비밀번호 재설정은 실행하지 않았다.
+- SQS 4개 최대 크기는 실제 1MiB로 바꿨고, 기존 DB·개발 주소·상시 서버 수·JWT와 역할을 유지했다.
+- Server engine 활성화, AI real/embedded worker 1개, 독립 worker 0개이며 유료 LLM은 비활성이다.
+- 적용 후 공개 HTTPS·Swagger·보호 API·로그인·갱신·로그아웃 28개 검사가 통과했다.
+  적용 전 refresh cookie의 적용 후 갱신도 별도로 확인했다.
+- 공개 health 관측에서 실패 시작 22:32:18, 정상 복귀 22:50:34(KST)였다.
+  예상 5~10분보다 길어진 약 18분 16초의 점검 중단이며 상시 무중단 구성으로 안내하지 않는다.
+- 실 AWS 정제·계산 전체와 재기동 후 내부 경보·메모리는 추가 검증을 구분해 기록한다.
+  격리 합성 31상품 검사를 실 고객 데이터 전체 검증으로 확대하지 않는다.
