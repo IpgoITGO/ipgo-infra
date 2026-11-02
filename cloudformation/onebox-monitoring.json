@@ -11,6 +11,10 @@
     "ApiDomainName": {
       "Type": "String",
       "AllowedPattern": "[a-z0-9.-]+"
+    },
+    "DistributionId": {
+      "Type": "String",
+      "AllowedPattern": "[A-Z0-9]+"
     }
   },
   "Resources": {
@@ -76,6 +80,13 @@
                       "cloudwatch:namespace": "Ipgo/Onebox"
                     }
                   }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "cloudwatch:GetMetricStatistics"
+                  ],
+                  "Resource": "*"
                 }
               ]
             }
@@ -104,11 +115,14 @@
           "Variables": {
             "API_HOST": {
               "Ref": "ApiDomainName"
+            },
+            "DISTRIBUTION_ID": {
+              "Ref": "DistributionId"
             }
           }
         },
         "Code": {
-          "ZipFile": "import json, os, urllib.request, boto3\ncloudwatch = boto3.client(\"cloudwatch\")\ndef handler(event, context):\n    healthy = False\n    try:\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/actuator/health\", timeout=6) as response:\n            healthy = response.status == 200 and json.load(response).get(\"status\") == \"UP\"\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/v3/api-docs\", timeout=6) as response:\n            healthy = healthy and response.status == 200 and \"openapi\" in json.load(response)\n    except Exception:\n        healthy = False\n    cloudwatch.put_metric_data(Namespace=\"Ipgo/Onebox\", MetricData=[{\n        \"MetricName\": \"ApiHealthy\", \"Dimensions\": [{\"Name\": \"Service\", \"Value\": \"dev-api\"}],\n        \"Unit\": \"Count\", \"Value\": int(healthy), \"StorageResolution\": 60\n    }])\n    return {\"healthy\": healthy}\n"
+          "ZipFile": "import json, os, urllib.request, boto3, datetime\ncloudwatch = boto3.client(\"cloudwatch\")\nglobal_metrics = boto3.client(\"cloudwatch\", region_name=\"us-east-1\")\ndef handler(event, context):\n    healthy = False\n    try:\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/actuator/health\", timeout=6) as response:\n            healthy = response.status == 200 and json.load(response).get(\"status\") == \"UP\"\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/v3/api-docs\", timeout=6) as response:\n            healthy = healthy and response.status == 200 and \"openapi\" in json.load(response)\n    except Exception:\n        healthy = False\n    entries = [{\"MetricName\": \"ApiHealthy\", \"Dimensions\": [{\"Name\": \"Service\", \"Value\": \"dev-api\"}],\n                \"Unit\": \"Count\", \"Value\": int(healthy), \"StorageResolution\": 60}]\n    now = datetime.datetime.now(datetime.timezone.utc)\n    # Standard CloudFront metrics are published in us-east-1; allow publishing delay.\n    metrics = global_metrics.get_metric_statistics(\n        Namespace=\"AWS/CloudFront\", MetricName=\"5xxErrorRate\",\n        Dimensions=[{\"Name\": \"DistributionId\", \"Value\": os.environ[\"DISTRIBUTION_ID\"]},\n                    {\"Name\": \"Region\", \"Value\": \"Global\"}],\n        StartTime=now-datetime.timedelta(minutes=5), EndTime=now, Period=60, Statistics=[\"Average\"]\n    )\n    points = metrics.get(\"Datapoints\", [])\n    if points:\n        entries.append({\"MetricName\": \"Api5xxRate\", \"Dimensions\": [{\"Name\": \"Service\", \"Value\": \"dev-api\"}],\n                        \"Unit\": \"Percent\", \"Value\": max(p[\"Average\"] for p in points), \"StorageResolution\": 60})\n    cloudwatch.put_metric_data(Namespace=\"Ipgo/Onebox\", MetricData=entries)\n    return {\"healthy\": healthy, \"errorMetricsObserved\": bool(points)}\n"
         }
       }
     },
@@ -269,6 +283,38 @@
           }
         ],
         "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ]
+      }
+    },
+    "APIErrors": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "ipgo-dev-onebox-api-errors",
+        "AlarmDescription": "CloudFront five-minute peak 5xx above five percent across two probes. Review API and edge errors.",
+        "Namespace": "Ipgo/Onebox",
+        "MetricName": "Api5xxRate",
+        "Statistic": "Maximum",
+        "Threshold": 5,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Period": 120,
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Dimensions": [
+          {
+            "Name": "Service",
+            "Value": "dev-api"
+          }
+        ],
+        "TreatMissingData": "notBreaching",
         "AlarmActions": [
           {
             "Ref": "AlertTopicArn"
