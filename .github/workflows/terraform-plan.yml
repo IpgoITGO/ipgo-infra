@@ -42,8 +42,16 @@ jobs:
         env:
           ACM_CERTIFICATE_ARN: ${{ vars.AWS_ACM_CERTIFICATE_ARN }}
           HTTP_DEV_ENDPOINT: ${{ vars.AWS_ENABLE_HTTP_DEV_ENDPOINT }}
+          API_DOMAIN_NAME: ${{ vars.AWS_API_DOMAIN_NAME }}
         shell: bash
         run: |
+          if [ -n "$API_DOMAIN_NAME" ]; then
+            if [[ ! "$API_DOMAIN_NAME" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
+              echo "::error::AWS_API_DOMAIN_NAME must be a DNS hostname without a scheme, port or path."
+              exit 1
+            fi
+            printf 'TF_VAR_https_redirect_host=%s\n' "$API_DOMAIN_NAME" >> "$GITHUB_ENV"
+          fi
           case "$HTTP_DEV_ENDPOINT" in
             true)
               echo 'TF_VAR_enable_http_dev_endpoint=true' >> "$GITHUB_ENV"
@@ -56,6 +64,10 @@ jobs:
               ;;
           esac
           if [ -n "$ACM_CERTIFICATE_ARN" ]; then
+            if [ -z "$API_DOMAIN_NAME" ]; then
+              echo "::error::Set AWS_API_DOMAIN_NAME before enabling HTTPS redirects."
+              exit 1
+            fi
             if [[ ! "$ACM_CERTIFICATE_ARN" =~ ^arn:aws:acm:ap-northeast-2:[0-9]{12}:certificate/[0-9a-f-]{36}$ ]]; then
               echo "::error::AWS_ACM_CERTIFICATE_ARN must identify a Seoul ACM certificate."
               exit 1

@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type APPLY_DEV after reviewing cost, rollback and a current plan"
+        description: "Type PLAN_DEV for plan-only, or APPLY_DEV after reviewing a current plan"
         required: true
         type: string
+      plan_only:
+        description: "Review a plan using the protected dev deployment role without applying it"
+        type: boolean
+        default: false
+      https_listener_only:
+        description: "Reject changes other than HTTPS creation and an in-place HTTP redirect"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,7 +28,8 @@ jobs:
   apply:
     if: >-
       github.ref == 'refs/heads/dev' &&
-      inputs.confirmation == 'APPLY_DEV' &&
+      ((inputs.plan_only && inputs.confirmation == 'PLAN_DEV') ||
+       (!inputs.plan_only && inputs.confirmation == 'APPLY_DEV')) &&
       vars.AWS_ACCOUNT_ID != '' &&
       vars.AWS_APPLY_ROLE_ARN != '' &&
       vars.TF_STATE_BUCKET != ''
@@ -43,8 +52,16 @@ jobs:
         env:
           ACM_CERTIFICATE_ARN: ${{ vars.AWS_ACM_CERTIFICATE_ARN }}
           HTTP_DEV_ENDPOINT: ${{ vars.AWS_ENABLE_HTTP_DEV_ENDPOINT }}
+          API_DOMAIN_NAME: ${{ vars.AWS_API_DOMAIN_NAME }}
         shell: bash
         run: |
+          if [ -n "$API_DOMAIN_NAME" ]; then
+            if [[ ! "$API_DOMAIN_NAME" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
+              echo "::error::AWS_API_DOMAIN_NAME must be a DNS hostname without a scheme, port or path."
+              exit 1
+            fi
+            printf 'TF_VAR_https_redirect_host=%s\n' "$API_DOMAIN_NAME" >> "$GITHUB_ENV"
+          fi
           case "$HTTP_DEV_ENDPOINT" in
             true)
               echo 'TF_VAR_enable_http_dev_endpoint=true' >> "$GITHUB_ENV"
@@ -57,6 +74,10 @@ jobs:
               ;;
           esac
           if [ -n "$ACM_CERTIFICATE_ARN" ]; then
+            if [ -z "$API_DOMAIN_NAME" ]; then
+              echo "::error::Set AWS_API_DOMAIN_NAME before enabling HTTPS redirects."
+              exit 1
+            fi
             if [[ ! "$ACM_CERTIFICATE_ARN" =~ ^arn:aws:acm:ap-northeast-2:[0-9]{12}:certificate/[0-9a-f-]{36}$ ]]; then
               echo "::error::AWS_ACM_CERTIFICATE_ARN must identify a Seoul ACM certificate."
               exit 1
@@ -92,7 +113,32 @@ jobs:
             echo "::error::Terraform plan failed. Detailed output is not published from this public repository."
             exit 1
           fi
+      - name: Review changes without publishing values
+        env:
+          HTTPS_LISTENER_ONLY: ${{ inputs.https_listener_only }}
+        shell: bash
+        run: |
+          terraform -chdir=terraform/environments/dev show -json dev.tfplan \
+            | jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) |
+                (.change.before // {}) as $before | (.change.after // {}) as $after |
+                [((($before | keys) + ($after | keys)) | unique)[] |
+                  select($before[.] != $after[.])] as $keys |
+                [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$HTTPS_LISTENER_ONLY" = true ]; then
+            terraform -chdir=terraform/environments/dev show -json dev.tfplan \
+              | jq -e 'all(.resource_changes[]?;
+                  .change.actions == ["no-op"] or
+                  (.mode == "data" and .change.actions == ["read"]) or
+                  (.address == "module.compute.aws_lb_listener.https[0]" and .change.actions == ["create"]) or
+                  (.address == "module.compute.aws_lb_listener.http[0]" and .change.actions == ["update"]))' \
+              > /dev/null || {
+                echo "::error::Plan contains changes outside the approved HTTPS listener transition."
+                exit 1
+              }
+          fi
       - name: Apply approved plan
+        if: ${{ !inputs.plan_only }}
         shell: bash
         run: |
           set +e

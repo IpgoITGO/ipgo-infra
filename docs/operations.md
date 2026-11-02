@@ -1,5 +1,24 @@
 # Terraform 운영
 
+## HTTP에서 HTTPS로 전환하기
+
+발급 완료된 기존 인증서 ARN을 유지하고 `AWS_API_DOMAIN_NAME`에 API의 전체 DNS 호스트를 설정합니다.
+`AWS_ENABLE_HTTP_DEV_ENDPOINT=false`로 변경하면 HTTPS를 사용합니다. DNS 검증 CNAME은 갱신을 위해 유지합니다.
+HTTPS 443을 먼저 만든 뒤 기존 HTTP 80 리스너의 동작만 redirect로 바꿉니다.
+기존 http_dev 상태 주소는 moved 블록으로 http에 연결해 리스너를 삭제·재생성하지 않습니다.
+ALB 기본 DNS 이름으로 들어온 HTTP 요청도 인증서와 일치하는 API 호스트로 이동합니다.
+
+기존 plan 역할의 listener 조회 권한이 부족하면 권한을 확대하지 않고 보호된 dev 배포 workflow의
+plan_only=true·confirmation=PLAN_DEV로 계획만 확인할 수 있습니다. dev 환경의 기존 승인은 유지됩니다.
+같은 고정 SHA·변수에서 검토 후 plan_only=false·confirmation=APPLY_DEV로 적용합니다.
+이 전환에서는 https_listener_only=true로 HTTPS 생성·HTTP 동작 수정 외 변경을 차단합니다.
+요약에는 자원·동작·필드 이름만 출력하고 실제 plan/state 값은 공개하지 않습니다.
+
+전환 전 listener·인증서·서버 이미지/실행 수·변수 값을 비공개로 보존합니다.
+실제 TLS 인증서와 이름 검증, HTTP redirect, Swagger 화면/문서/정적 파일,
+헬스·기존 인증/CSRF 응답과 현재 서버 이미지·수량 유지까지 확인합니다.
+복구는 임시 HTTP 모드로 돌아간 새 plan을 별도 검토해 적용하며, 서버 코드·DB는 되돌리지 않습니다.
+
 ## 서버가 처음 켜질 때의 대기 시간
 
 서버 서비스는 새 task 시작 후 180초 동안 초기 헬스 실패로 조기 종료하지 않도록 기다립니다.
