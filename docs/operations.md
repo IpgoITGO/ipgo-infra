@@ -2,12 +2,13 @@
 
 ## 개발 비용·장애 알림과 상세 관측
 
-`AWS_ENABLE_DEV_MONITORING=true`, `AWS_MONTHLY_BUDGET_USD=100`, `AWS_CONTAINER_INSIGHTS=disabled`를
+`AWS_ENABLE_DEV_MONITORING=true`, `AWS_MONTHLY_BUDGET_USD=50`, `AWS_CONTAINER_INSIGHTS=disabled`를
 저장소 변수로 설정합니다. 수신 이메일은 **저장소 secret `AWS_ALERT_EMAIL`**로만 전달하며 공개 문서·PR·변수에는 적지 않습니다.
 두 plan/apply workflow는 같은 입력 검증 스크립트를 사용합니다. monitoring=true인데 이메일이 없거나 잘못되면
 계획 전에 실패하므로 기존 알림을 비밀값 누락 때문에 조용히 제거하지 않습니다.
 
-계정 전체 월 예산이며 실제 지출 80%/100%와 예상 100% 초과 알림만 보냅니다. 서비스 중지·자동 제한 동작은 없습니다.
+기존 개발 월 50 USD 한도를 따릅니다. 실제 지출 40/50 USD와 예상 50 USD 초과 알림을 보냅니다.
+이것은 알림 기준이며 월 사용료를 50 USD 이하로 자동 제한하는 장치는 아닙니다. 서비스 중지·자동 제한 동작은 없습니다.
 세금은 포함하고 credit/refund는 제외해 보수적으로 계산합니다. 비용 집계는 즉시 반영되지 않으며
 충분한 이력이 쌓이기 전에는 AWS가 예측 비용을 제공하지 못할 수 있습니다. Budget는 수신 이메일로 직접 전달합니다.
 장애 알림은 서울 SNS의 `ipgo-dev-alerts` 토픽을 사용하며 **AWS SNS 구독 확인 메일의 Confirm subscription을 눌러야** 수신됩니다.
