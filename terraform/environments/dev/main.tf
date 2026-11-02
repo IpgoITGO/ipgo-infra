@@ -263,7 +263,27 @@ module "compute" {
   certificate_arn                       = var.certificate_arn
   enable_http_dev_endpoint              = var.enable_http_dev_endpoint
   https_redirect_host                   = var.https_redirect_host
+  container_insights                    = var.container_insights
   tags                                  = local.common_tags
+}
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+  count  = var.enable_dev_monitoring ? 1 : 0
+
+  name_prefix             = local.name_prefix
+  aws_region              = var.aws_region
+  cluster_name            = module.compute.cluster_name
+  alb_arn_suffix          = module.compute.alb_arn_suffix
+  target_group_arn_suffix = module.compute.server_target_group_arn_suffix
+  database_identifier     = "${local.name_prefix}-postgres"
+  services = {
+    server = module.compute.server_service_name
+    ai_api = module.compute.ai_api_service_name
+  }
+  alert_email        = var.alert_email
+  monthly_budget_usd = var.monthly_budget_usd
+  tags               = local.common_tags
 }
 
 module "identity" {

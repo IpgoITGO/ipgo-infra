@@ -74,6 +74,13 @@ jobs:
             fi
             printf 'TF_VAR_certificate_arn=%s\n' "$ACM_CERTIFICATE_ARN" >> "$GITHUB_ENV"
           fi
+      - name: Configure monitoring
+        env:
+          DEV_MONITORING_ENABLED: ${{ vars.AWS_ENABLE_DEV_MONITORING }}
+          ALERT_EMAIL: ${{ secrets.AWS_ALERT_EMAIL }}
+          MONTHLY_BUDGET_USD: ${{ vars.AWS_MONTHLY_BUDGET_USD }}
+          CONTAINER_INSIGHTS: ${{ vars.AWS_CONTAINER_INSIGHTS }}
+        run: python3 scripts/configure-monitoring.py
       - name: Configure backend
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}

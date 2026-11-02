@@ -16,6 +16,11 @@ on:
         type: boolean
         default: false
 
+      monitoring_only:
+        description: "Reject changes outside alert creation and disabling detailed cluster telemetry"
+        type: boolean
+        default: false
+
 permissions:
   contents: read
   id-token: write
@@ -84,6 +89,13 @@ jobs:
             fi
             printf 'TF_VAR_certificate_arn=%s\n' "$ACM_CERTIFICATE_ARN" >> "$GITHUB_ENV"
           fi
+      - name: Configure monitoring
+        env:
+          DEV_MONITORING_ENABLED: ${{ vars.AWS_ENABLE_DEV_MONITORING }}
+          ALERT_EMAIL: ${{ secrets.AWS_ALERT_EMAIL }}
+          MONTHLY_BUDGET_USD: ${{ vars.AWS_MONTHLY_BUDGET_USD }}
+          CONTAINER_INSIGHTS: ${{ vars.AWS_CONTAINER_INSIGHTS }}
+        run: python3 scripts/configure-monitoring.py
       - name: Configure backend
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
@@ -116,6 +128,7 @@ jobs:
       - name: Review changes without publishing values
         env:
           HTTPS_LISTENER_ONLY: ${{ inputs.https_listener_only }}
+          MONITORING_ONLY: ${{ inputs.monitoring_only }}
         shell: bash
         run: |
           terraform -chdir=terraform/environments/dev show -json dev.tfplan \
@@ -125,6 +138,10 @@ jobs:
                   select($before[.] != $after[.])] as $keys |
                 [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
             | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$MONITORING_ONLY" = true ]; then
+            terraform -chdir=terraform/environments/dev show -json dev.tfplan \
+              | python3 scripts/check-monitoring-plan.py
+          fi
           if [ "$HTTPS_LISTENER_ONLY" = true ]; then
             terraform -chdir=terraform/environments/dev show -json dev.tfplan \
               | jq -e 'all(.resource_changes[]?;

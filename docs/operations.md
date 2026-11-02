@@ -1,5 +1,48 @@
 # Terraform 운영
 
+## 개발 비용·장애 알림과 상세 관측
+
+`AWS_ENABLE_DEV_MONITORING=true`, `AWS_MONTHLY_BUDGET_USD=100`, `AWS_CONTAINER_INSIGHTS=disabled`를
+저장소 변수로 설정합니다. 수신 이메일은 **저장소 secret `AWS_ALERT_EMAIL`**로만 전달하며 공개 문서·PR·변수에는 적지 않습니다.
+두 plan/apply workflow는 같은 입력 검증 스크립트를 사용합니다. monitoring=true인데 이메일이 없거나 잘못되면
+계획 전에 실패하므로 기존 알림을 비밀값 누락 때문에 조용히 제거하지 않습니다.
+
+계정 전체 월 예산이며 실제 지출 80%/100%와 예상 100% 초과 알림만 보냅니다. 서비스 중지·자동 제한 동작은 없습니다.
+세금은 포함하고 credit/refund는 제외해 보수적으로 계산합니다. 비용 집계는 즉시 반영되지 않으며
+충분한 이력이 쌓이기 전에는 AWS가 예측 비용을 제공하지 못할 수 있습니다. Budget는 수신 이메일로 직접 전달합니다.
+장애 알림은 서울 SNS의 `ipgo-dev-alerts` 토픽을 사용하며 **AWS SNS 구독 확인 메일의 Confirm subscription을 눌러야** 수신됩니다.
+확인 URL·구독 토큰·수신 주소는 이 저장소와 작업 로그에 게시하지 않습니다.
+
+| 알림 | 기준 |
+| --- | --- |
+| 서버 응답 불가 | healthy target 1개 미만 2분; 지표 누락도 경보 |
+| API 오류 증가 | backend 5xx 5분간 5건 이상 |
+| ALB 오류 증가 | ALB 5xx 5분간 3건 이상 |
+| 서버·AI CPU | 각각 85% 초과 15분 |
+| 서버·AI 메모리 | 각각 85% 초과 15분 |
+| DB 여유 메모리 | 100 MiB 미만 15분 |
+| DB 여유 공간 | 2 GiB 미만 5분 구간 |
+
+9개 표준 지표 경보와 SNS만 사용하며 복구(OK) 상태도 보냅니다. 기본 지표가 있는 AWS/ECS·ALB·RDS를 사용해
+Container Insights를 끄더라도 동작합니다. 멈춰 둔 worker에는 CPU/메모리 알림을 만들지 않습니다.
+경보는 조건 평가 시점의 상태 변경에 따라 보내며 최초 정상화 OK 메일이 올 수 있습니다.
+경보/이메일에 별도 소액 과금이 있을 수 있으며 10/31 상세 모니터링 비용의 단순 월 환산 약21USD는 절감 후보이지 보장액이 아닙니다.
+
+적용 전 스냅샷과 최신 plan을 확인합니다. protected dev workflow에서 먼저
+plan_only=true·confirmation=PLAN_DEV·monitoring_only=true로 계획만 검토한 뒤 같은 고정 SHA에서
+plan_only=false·confirmation=APPLY_DEV·monitoring_only=true로 적용합니다.
+가드는 알림 신규 생성과 cluster.setting의 containerInsights=disabled 수정만 허용하고 서비스·task definition·DB·listener 변경은 막습니다.
+기존 HTTPS 모드·앱 로그 보존·서버 실행 수·이미지·기동 유예·DB는 유지합니다.
+
+적용 후 SNS 구독 확인 상태·예산 subscriber·9개 경보의 dimension/action·기본 CPU/메모리 최신 지표,
+같은 ECS task/deployment·실행 수와 HTTPS health/Swagger/API를 대조합니다. 서버를 중단해 경보를 시험하지 않습니다.
+테스트 메일은 구독 확인 이후 SNS로 1건만 발송하고, AWS의 수락·전달 지표와 사용자 실제 수신은 구분합니다.
+
+복구 시 `AWS_CONTAINER_INSIGHTS=enhanced`로 되돌린 새 plan에서 cluster.setting만 수정되는지 확인합니다.
+이 역방향은 최초 축소 전용 monitoring_only 가드에서 허용되지 않으므로 역방향 계획을 별도로 검토합니다.
+알림 자체를 복구/제거해야 하면 예산·SNS·9개 경보만 대상임을 확인하고, 앱·DB가 섞이면 적용하지 않습니다.
+실제 서비스 장애가 없다면 설정을 되돌리기 위해 서버나 DB를 재시작하지 않습니다.
+
 ## HTTP에서 HTTPS로 전환하기
 
 발급 완료된 기존 인증서 ARN을 유지하고 `AWS_API_DOMAIN_NAME`에 API의 전체 DNS 호스트를 설정합니다.
