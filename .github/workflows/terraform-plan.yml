@@ -112,4 +112,4 @@ jobs:
                 [((($before | keys) + ($after | keys)) | unique)[] |
                   select($before[.] != $after[.])] as $keys |
                 [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
-            >> "$GITHUB_STEP_SUMMARY"
+            | tee -a "$GITHUB_STEP_SUMMARY"
