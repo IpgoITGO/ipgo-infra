@@ -175,10 +175,16 @@ variable "ai_worker_desired_count" {
 }
 
 variable "certificate_arn" {
-  description = "ACM certificate ARN. No public listener is created when null."
+  description = "ACM certificate ARN. When null, public access requires the explicit temporary HTTP opt-in."
   type        = string
   default     = null
   nullable    = true
+}
+
+variable "enable_http_dev_endpoint" {
+  description = "Opt in to temporary unencrypted development access when no certificate is configured."
+  type        = bool
+  default     = false
 }
 
 variable "server_health_check_path" {

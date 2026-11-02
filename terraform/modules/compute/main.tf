@@ -172,6 +172,19 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
+resource "aws_lb_listener" "http_dev" {
+  count = var.certificate_arn == null && var.enable_http_dev_endpoint ? 1 : 0
+
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.server.arn
+  }
+}
+
 resource "aws_ecs_task_definition" "server" {
   family                   = "${var.name_prefix}-server"
   requires_compatibilities = ["FARGATE"]
@@ -485,7 +498,7 @@ resource "aws_ecs_service" "server" {
   }
 
   dynamic "load_balancer" {
-    for_each = var.certificate_arn == null ? [] : [aws_lb_target_group.server.arn]
+    for_each = var.certificate_arn != null || var.enable_http_dev_endpoint ? [aws_lb_target_group.server.arn] : []
 
     content {
       target_group_arn = load_balancer.value
@@ -504,9 +517,9 @@ resource "aws_ecs_service" "server" {
   }
 
   # ECS rejects a target group until an ALB listener has associated it with
-  # the load balancer. With no certificate, both the listener and this
-  # service's load-balancer attachment intentionally remain absent.
-  depends_on = [aws_lb_listener.https]
+  # the load balancer. Initial setup without either public endpoint keeps
+  # the service unattached; temporary HTTP and HTTPS both satisfy this dependency.
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http_dev]
 
   tags = var.tags
 }
