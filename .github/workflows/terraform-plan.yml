@@ -38,11 +38,23 @@ jobs:
           role-session-name: ipgo-infra-plan
       - name: Verify AWS identity
         run: aws sts get-caller-identity --query Arn --output text >/dev/null
-      - name: Configure optional HTTPS certificate
+      - name: Configure public endpoint
         env:
           ACM_CERTIFICATE_ARN: ${{ vars.AWS_ACM_CERTIFICATE_ARN }}
+          HTTP_DEV_ENDPOINT: ${{ vars.AWS_ENABLE_HTTP_DEV_ENDPOINT }}
         shell: bash
         run: |
+          case "$HTTP_DEV_ENDPOINT" in
+            true)
+              echo 'TF_VAR_enable_http_dev_endpoint=true' >> "$GITHUB_ENV"
+              exit 0
+              ;;
+            ''|false) ;;
+            *)
+              echo "::error::AWS_ENABLE_HTTP_DEV_ENDPOINT must be true, false, or unset."
+              exit 1
+              ;;
+          esac
           if [ -n "$ACM_CERTIFICATE_ARN" ]; then
             if [[ ! "$ACM_CERTIFICATE_ARN" =~ ^arn:aws:acm:ap-northeast-2:[0-9]{12}:certificate/[0-9a-f-]{36}$ ]]; then
               echo "::error::AWS_ACM_CERTIFICATE_ARN must identify a Seoul ACM certificate."

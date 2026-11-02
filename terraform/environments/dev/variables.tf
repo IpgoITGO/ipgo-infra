@@ -23,6 +23,12 @@ variable "certificate_arn" {
   nullable    = true
 }
 
+variable "enable_http_dev_endpoint" {
+  description = "Temporarily expose the development backend over HTTP while certificate validation is pending."
+  type        = bool
+  default     = false
+}
+
 variable "db_engine_version" {
   description = "PostgreSQL version verified as orderable in the target Region."
   type        = string

@@ -261,6 +261,7 @@ module "compute" {
   ai_api_desired_count                  = var.ai_api_desired_count
   ai_worker_desired_count               = var.ai_worker_desired_count
   certificate_arn                       = var.certificate_arn
+  enable_http_dev_endpoint              = var.enable_http_dev_endpoint
   tags                                  = local.common_tags
 }
 

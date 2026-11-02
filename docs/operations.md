@@ -1,10 +1,31 @@
 # Terraform 운영
 
+## 인증서 발급 전 임시 HTTP 개발 주소
+
+연결 테스트를 먼저 해야 하는 경우에만 사용자 승인 후 저장소 변수
+`AWS_ENABLE_HTTP_DEV_ENDPOINT=true`를 설정합니다. plan/apply는 이 모드에서 인증서 ARN 전달을
+생략하고 `enable_http_dev_endpoint=true`를 전달합니다. 기본값은 false이며 기존 초기 구성은 유지합니다.
+HTTP 80 리스너 한 개가 기존 서버 대상 그룹으로 전달하고, ECS의 서버 LB 연결을 활성화합니다.
+서버 이미지·수량의 ignore_changes와 기존 네트워크·DB·Secret 값은 유지합니다.
+
+실행 중인 이전 apply가 환경 승인 대기라면 대상 SHA와 미실행 상태를 확인·보존하고 취소한 뒤
+새 HTTP 계획의 고정 SHA만 적용합니다. 실제 plan에서 HTTP 리스너 생성·서버 LB 연결 이외 변경,
+자원 삭제·교체가 있으면 적용 전에 별도 검토합니다.
+적용 후 대상 그룹 healthy·기존 이미지와 수량 유지·외부 HTTP health 응답을 확인합니다.
+Secure 쿠키 설정은 유지되므로 HTTP 주소의 검증 범위는 연결과 인증 실패 응답입니다.
+실제 계정 정보 전송과 브라우저 로그인·갱신은 HTTPS 주소에서 검증합니다.
+
+HTTPS 전환 시 ACM ISSUED를 확인한 다음 이 변수를 false로 변경하거나 제거하고 새 plan을 검토합니다.
+인증서 변수는 그대로 유지합니다. 임시 HTTP 전달 리스너가 제거되고 HTTPS 리스너와 HTTP redirect가
+생성되며 기존 ECS 대상 그룹 연결은 유지됩니다. HTTP 단계 성공을 HTTPS 통합 완료로 보고하지 않습니다.
+임시 연결 복구는 인증서 변수를 비운 상태에서 HTTP opt-in도 끈 계획을 별도 검토해 적용합니다.
+기존 요청을 되돌릴 때 인증서 변수·HTTP 모드 두 값을 함께 확인합니다.
+
 ## 개발 API HTTPS 인증서 연결
 
 서울 리전 ACM에서 API의 전체 도메인 이름에 대한 DNS 검증을 완료한 뒤,
 저장소 Actions variable `AWS_ACM_CERTIFICATE_ARN`에 해당 인증서 ARN을 설정합니다.
-plan/apply workflow 모두 값이 있을 때만 `TF_VAR_certificate_arn`으로 전달합니다.
+plan/apply workflow 모두 임시 HTTP 모드가 꺼져 있고 값이 있을 때만 `TF_VAR_certificate_arn`으로 전달합니다.
 값이 없으면 Terraform의 기존 null 기본값을 사용해 인증서 없는 초기 구성을 유지합니다.
 개인 도메인과 실제 ARN은 공개 소스에 넣지 않습니다.
 
