@@ -1,5 +1,29 @@
 # Terraform 운영
 
+## 개발 API HTTPS 인증서 연결
+
+서울 리전 ACM에서 API의 전체 도메인 이름에 대한 DNS 검증을 완료한 뒤,
+저장소 Actions variable `AWS_ACM_CERTIFICATE_ARN`에 해당 인증서 ARN을 설정합니다.
+plan/apply workflow 모두 값이 있을 때만 `TF_VAR_certificate_arn`으로 전달합니다.
+값이 없으면 Terraform의 기존 null 기본값을 사용해 인증서 없는 초기 구성을 유지합니다.
+개인 도메인과 실제 ARN은 공개 소스에 넣지 않습니다.
+
+외부 DNS에는 API 호스트를 기존 ALB DNS로 연결하는 CNAME과 ACM이 발급한 검증 CNAME을
+각각 등록합니다. 검증 CNAME은 갱신을 위해 유지합니다. 인증서가 `ISSUED`인지 확인하고
+고정된 코드 SHA의 plan에서 HTTPS/HTTP 리스너 생성과 기존 서버 서비스의 대상 그룹 연결만
+변경되는지 검토합니다. 다른 변경이 있으면 적용 전에 범위를 다시 확인합니다.
+plan 요약에는 변경 자원 주소·동작만 출력하며 state/plan의 실제 값은 공개하지 않습니다.
+
+apply 전 현재 서버 Task Definition·이미지·desired count와 ALB 구성을 비공개 위치에 보존하고
+사용자 승인을 받습니다. 서비스의 `task_definition`·`desired_count` ignore_changes는 유지합니다.
+적용 후 기존 최신 이미지와 실행 수가 유지되는지, 대상 그룹 healthy, HTTP→HTTPS 리다이렉트,
+호스트 이름과 일치하는 TLS 인증서 및 `/actuator/health` 실제 응답을 확인합니다.
+앱 healthCheck가 없으면 ECS 앱 컨테이너 `UNKNOWN`을 별도로 기록합니다.
+
+복구 시 승인된 이전 구성으로 plan을 만들어 리스너와 서비스 LB 연결을 되돌립니다.
+인증서 변수 제거만으로 다음 apply가 리스너를 없앨 수 있으므로 먼저 영향과 plan을 검토합니다.
+이 작업은 DB migration·NAT·Secret 값·다른 서비스 배포를 포함하지 않습니다.
+
 ## 현재 단계
 
 현재 configuration은 검토와 검증용이며 AWS에 적용되지 않았습니다. 실제 apply 전에는 대상 AWS 계정과 `ap-northeast-2` 리전을 읽기 호출로 다시 확인합니다.
