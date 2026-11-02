@@ -481,7 +481,7 @@ resource "aws_ecs_service" "server" {
   desired_count                      = var.server_desired_count
   launch_type                        = "FARGATE"
   platform_version                   = "LATEST"
-  health_check_grace_period_seconds  = 60
+  health_check_grace_period_seconds  = 180
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
   enable_execute_command             = false
