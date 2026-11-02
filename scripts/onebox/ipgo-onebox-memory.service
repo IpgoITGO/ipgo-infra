@@ -1,0 +1,16 @@
+[Unit]
+Description=Report IPGO one-box host memory
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker run --rm --pull=never --name ipgo-onebox-memory-monitor --network host --read-only --user 10001:10001 --memory 80m --memory-swap 80m --cpus 0.2 --cpu-shares 2 --oom-score-adj 1000 --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges --env AWS_DEFAULT_REGION=ap-northeast-2 --env PYTHONDONTWRITEBYTECODE=1 --volume /opt/ipgo-onebox/report-memory.py:/monitor/report-memory.py:ro --entrypoint python ipgo-onebox-memory-monitor:local /monitor/report-memory.py
+ExecStopPost=-/usr/bin/docker rm -f ipgo-onebox-memory-monitor
+TimeoutStartSec=45
+Nice=10
+OOMScoreAdjust=1000
+CPUQuota=20%
+MemoryMax=48M
+MemorySwapMax=0
+

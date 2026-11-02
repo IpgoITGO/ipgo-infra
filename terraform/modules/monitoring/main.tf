@@ -82,7 +82,7 @@ locals {
 }
 
 resource "aws_cloudwatch_metric_alarm" "health" {
-  for_each = merge(local.fixed_alarms, local.service_alarms)
+  for_each = merge({ for key, alarm in local.fixed_alarms : key => alarm if var.enable_legacy_alarms || startswith(key, "database-") }, local.service_alarms)
 
   alarm_name          = "${var.name_prefix}-${each.key}"
   alarm_description   = each.value.description

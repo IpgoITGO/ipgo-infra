@@ -221,3 +221,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_legacy_alb" {
+  description = "Keep the legacy ALB until one-box HTTPS, DNS and traffic drain are verified."
+  type        = bool
+  default     = true
+}

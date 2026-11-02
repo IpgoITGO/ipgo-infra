@@ -11,3 +11,9 @@ variable "alert_email" {
   sensitive = true
 }
 variable "monthly_budget_usd" { type = number }
+
+variable "enable_legacy_alarms" {
+  description = "Keep ALB alarms while the legacy endpoint still carries traffic."
+  type        = bool
+  default     = true
+}

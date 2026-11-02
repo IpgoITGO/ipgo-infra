@@ -1,0 +1,285 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "IPGO one-box standard monitoring; existing SNS subscription and RDS alarms retained.",
+  "Parameters": {
+    "InstanceId": {
+      "Type": "AWS::EC2::Instance::Id"
+    },
+    "AlertTopicArn": {
+      "Type": "String"
+    },
+    "ApiDomainName": {
+      "Type": "String",
+      "AllowedPattern": "[a-z0-9.-]+"
+    }
+  },
+  "Resources": {
+    "HealthLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/ipgo-dev-api-health",
+        "RetentionInDays": 7,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "ipgo"
+          },
+          {
+            "Key": "Environment",
+            "Value": "dev"
+          }
+        ]
+      }
+    },
+    "HealthRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "OnlyOwnLogsAndHealthMetric",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "HealthLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "cloudwatch:PutMetricData"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "cloudwatch:namespace": "Ipgo/Onebox"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "HealthFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "ipgo-dev-api-health",
+        "Runtime": "python3.12",
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "HealthRole",
+            "Arn"
+          ]
+        },
+        "MemorySize": 128,
+        "Timeout": 25,
+        "Environment": {
+          "Variables": {
+            "API_HOST": {
+              "Ref": "ApiDomainName"
+            }
+          }
+        },
+        "Code": {
+          "ZipFile": "import json, os, urllib.request, boto3\ncloudwatch = boto3.client(\"cloudwatch\")\ndef handler(event, context):\n    healthy = False\n    try:\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/actuator/health\", timeout=6) as response:\n            healthy = response.status == 200 and json.load(response).get(\"status\") == \"UP\"\n        with urllib.request.urlopen(\"https://\" + os.environ[\"API_HOST\"] + \"/v3/api-docs\", timeout=6) as response:\n            healthy = healthy and response.status == 200 and \"openapi\" in json.load(response)\n    except Exception:\n        healthy = False\n    cloudwatch.put_metric_data(Namespace=\"Ipgo/Onebox\", MetricData=[{\n        \"MetricName\": \"ApiHealthy\", \"Dimensions\": [{\"Name\": \"Service\", \"Value\": \"dev-api\"}],\n        \"Unit\": \"Count\", \"Value\": int(healthy), \"StorageResolution\": 60\n    }])\n    return {\"healthy\": healthy}\n"
+        }
+      }
+    },
+    "HealthSchedule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name": "ipgo-dev-api-health",
+        "ScheduleExpression": "rate(2 minutes)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Id": "api-health",
+            "Arn": {
+              "Fn::GetAtt": [
+                "HealthFunction",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "HealthInvocation": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "HealthFunction"
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "HealthSchedule",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "HostUnavailable": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "ipgo-dev-onebox-host-unavailable",
+        "AlarmDescription": "Host status check failure for two minutes. Inspect EC2 and ECS tasks; preserve the existing RDS.",
+        "Namespace": "AWS/EC2",
+        "MetricName": "StatusCheckFailed",
+        "Statistic": "Maximum",
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Period": 60,
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ]
+      }
+    },
+    "CPUHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "ipgo-dev-onebox-cpu-high",
+        "AlarmDescription": "CPU above 70 percent for 15 minutes. Standard CPU credits cap surplus fees; inspect latency and workload.",
+        "Namespace": "AWS/EC2",
+        "MetricName": "CPUUtilization",
+        "Statistic": "Average",
+        "Threshold": 70,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ]
+      }
+    },
+    "MemoryLow": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "ipgo-dev-onebox-memory-low",
+        "AlarmDescription": "Host available memory below ten percent for ten minutes, or memory reporting missing. Review growth before expanding tasks.",
+        "Namespace": "Ipgo/Onebox",
+        "MetricName": "MemoryAvailablePercent",
+        "Statistic": "Minimum",
+        "Threshold": 10,
+        "ComparisonOperator": "LessThanThreshold",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ]
+      }
+    },
+    "APIUnavailable": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "ipgo-dev-onebox-api-unavailable",
+        "AlarmDescription": "Public verified HTTPS health and OpenAPI checks failed or missing across two two-minute periods.",
+        "Namespace": "Ipgo/Onebox",
+        "MetricName": "ApiHealthy",
+        "Statistic": "Minimum",
+        "Threshold": 1,
+        "ComparisonOperator": "LessThanThreshold",
+        "Period": 120,
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Dimensions": [
+          {
+            "Name": "Service",
+            "Value": "dev-api"
+          }
+        ],
+        "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopicArn"
+          }
+        ]
+      }
+    }
+  }
+}
