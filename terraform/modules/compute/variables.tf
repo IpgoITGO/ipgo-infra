@@ -200,6 +200,16 @@ variable "server_health_check_path" {
   default     = "/actuator/health"
 }
 
+variable "container_insights" {
+  description = "Cluster telemetry level; disabled retains standard ECS service CPU/memory metrics."
+  type        = string
+  default     = "disabled"
+  validation {
+    condition     = contains(["disabled", "enabled", "enhanced"], var.container_insights)
+    error_message = "container_insights must be disabled, enabled, or enhanced."
+  }
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention."
   type        = number

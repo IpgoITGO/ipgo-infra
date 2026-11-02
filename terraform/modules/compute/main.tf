@@ -70,7 +70,7 @@ resource "aws_ecs_cluster" "this" {
 
   setting {
     name  = "containerInsights"
-    value = "enhanced"
+    value = var.container_insights
   }
 
   tags = var.tags

@@ -4,6 +4,43 @@ variable "aws_region" {
   default     = "ap-northeast-2"
 }
 
+variable "enable_dev_monitoring" {
+  description = "Create the approved development alarms and account budget."
+  type        = bool
+  default     = false
+}
+
+variable "alert_email" {
+  description = "Private alert destination, supplied through GitHub Actions secret AWS_ALERT_EMAIL."
+  type        = string
+  default     = null
+  sensitive   = true
+  validation {
+    condition     = !var.enable_dev_monitoring || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.alert_email))
+    error_message = "A valid alert_email is required when development monitoring is enabled."
+  }
+}
+
+variable "monthly_budget_usd" {
+  description = "Account-wide monthly USD cost alert threshold; alerts never stop services."
+  type        = number
+  default     = 100
+  validation {
+    condition     = var.monthly_budget_usd > 0
+    error_message = "monthly_budget_usd must be positive."
+  }
+}
+
+variable "container_insights" {
+  description = "Detailed ECS telemetry mode, independent of application logs and service metrics."
+  type        = string
+  default     = "disabled"
+  validation {
+    condition     = contains(["disabled", "enabled", "enhanced"], var.container_insights)
+    error_message = "container_insights must be disabled, enabled, or enhanced."
+  }
+}
+
 variable "availability_zones" {
   description = "Two Availability Zones used by dev."
   type        = list(string)
