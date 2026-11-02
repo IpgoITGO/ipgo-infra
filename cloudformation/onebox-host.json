@@ -1,0 +1,283 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "IPGO dev single-node ECS host, existing private RDS retained; CloudFront endpoint managed separately.",
+  "Parameters": {
+    "RunId": {
+      "Type": "String",
+      "AllowedPattern": "[a-zA-Z0-9-]+"
+    },
+    "ImageId": {
+      "Type": "AWS::EC2::Image::Id"
+    },
+    "SubnetId": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ServerSecurityGroupId": {
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    },
+    "CloudFrontSecurityGroupId": {
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    },
+    "ECSClusterName": {
+      "Type": "String",
+      "Default": "ipgo-dev-cluster",
+      "AllowedPattern": "[a-zA-Z0-9_-]+"
+    }
+  },
+  "Resources": {
+    "Artifacts": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "IgnorePublicAcls": true,
+          "BlockPublicPolicy": true,
+          "RestrictPublicBuckets": true
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "ExpireValidationArtifacts",
+              "Status": "Enabled",
+              "ExpirationInDays": 1
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Purpose",
+            "Value": "ipgo-onebox-validation"
+          }
+        ]
+      }
+    },
+    "ArtifactsPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "Artifacts"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "Artifacts",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${Artifacts.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Role": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "ipgo-dev-onebox-validation-${RunId}"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+          "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "OwnArtifactsAndHostMemoryMetric",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Artifacts.Arn}/onebox/*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "cloudwatch:PutMetricData"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "cloudwatch:namespace": "Ipgo/Onebox"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Purpose",
+            "Value": "ipgo-onebox-validation"
+          }
+        ]
+      }
+    },
+    "Profile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "Role"
+          }
+        ]
+      }
+    },
+    "Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "InstanceType": "t4g.micro",
+        "IamInstanceProfile": {
+          "Ref": "Profile"
+        },
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "MetadataOptions": {
+          "HttpEndpoint": "enabled",
+          "HttpTokens": "required",
+          "HttpPutResponseHopLimit": 1
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "DeleteOnTermination": true,
+              "Encrypted": true,
+              "VolumeSize": 30,
+              "VolumeType": "gp3"
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeviceIndex": "0",
+            "SubnetId": {
+              "Ref": "SubnetId"
+            },
+            "AssociatePublicIpAddress": true,
+            "GroupSet": [
+              {
+                "Ref": "ServerSecurityGroupId"
+              }
+            ]
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash\nset -euo pipefail\ninstall -d -m 0755 /etc/ecs\ncat > /etc/ecs/ecs.config <<'EOF'\nECS_CLUSTER=${ECSClusterName}\nECS_RESERVED_MEMORY=96\nECS_LOGLEVEL=warn\nECS_IMAGE_PULL_BEHAVIOR=prefer-cached\nECS_ENABLE_TASK_IAM_ROLE=true\nECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true\nECS_INSTANCE_ATTRIBUTES={\"ipgo.onebox\":\"true\"}\nEOF\nsystemctl enable --now docker\nsystemctl enable --now --no-block ecs\ninstall -d -m 0700 /var/lib/ipgo-onebox-validation\ntouch /var/lib/ipgo-onebox-validation/bootstrap-ready\n"
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "ipgo-dev-onebox"
+          },
+          {
+            "Key": "Project",
+            "Value": "ipgo"
+          },
+          {
+            "Key": "Environment",
+            "Value": "dev"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "consolidated-app-ai"
+          }
+        ],
+        "DisableApiTermination": true,
+        "Monitoring": false,
+        "CreditSpecification": {
+          "CPUCredits": "standard"
+        }
+      }
+    },
+    "CloudFrontIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "ServerSecurityGroupId"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "CloudFrontSecurityGroupId"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 8080,
+        "ToPort": 8080,
+        "Description": "CloudFront private VPC origin to the one-box API"
+      }
+    }
+  },
+  "Outputs": {
+    "InstanceId": {
+      "Value": {
+        "Ref": "Instance"
+      }
+    },
+    "ArtifactsBucket": {
+      "Value": {
+        "Ref": "Artifacts"
+      }
+    },
+    "PrivateIP": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Instance",
+          "PrivateIp"
+        ]
+      }
+    },
+    "PrivateDNS": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Instance",
+          "PrivateDnsName"
+        ]
+      }
+    }
+  }
+}

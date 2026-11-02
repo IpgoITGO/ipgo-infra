@@ -1,5 +1,7 @@
 # Ipgo Infra
 
+개발 서버의 단일 호스트 전환·비용·장애 알림·복구 절차는 [운영 문서](docs/onebox.md)를 참고합니다.
+
 IpgoITGO의 AWS 공통 인프라를 Terraform으로 관리하는 공개 저장소입니다. Spring Boot API, FastAPI 계산 엔진과 공통 데이터 계층이 사용하는 기반 자원을 정의합니다.
 
 > 현재 상태는 **코드 준비 단계**입니다. 이 저장소의 Terraform은 아직 AWS에 적용되지 않았고 AWS 리소스도 생성하지 않았습니다.

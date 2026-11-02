@@ -43,8 +43,14 @@ jobs:
           ACM_CERTIFICATE_ARN: ${{ vars.AWS_ACM_CERTIFICATE_ARN }}
           HTTP_DEV_ENDPOINT: ${{ vars.AWS_ENABLE_HTTP_DEV_ENDPOINT }}
           API_DOMAIN_NAME: ${{ vars.AWS_API_DOMAIN_NAME }}
+          LEGACY_ALB_ENABLED: ${{ vars.AWS_ENABLE_LEGACY_ALB }}
         shell: bash
         run: |
+          case "$LEGACY_ALB_ENABLED" in
+            ''|true) echo 'TF_VAR_enable_legacy_alb=true' >> "$GITHUB_ENV" ;;
+            false) echo 'TF_VAR_enable_legacy_alb=false' >> "$GITHUB_ENV" ;;
+            *) echo '::error::AWS_ENABLE_LEGACY_ALB must be true, false, or unset.'; exit 1 ;;
+          esac
           if [ -n "$API_DOMAIN_NAME" ]; then
             if [[ ! "$API_DOMAIN_NAME" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
               echo "::error::AWS_API_DOMAIN_NAME must be a DNS hostname without a scheme, port or path."

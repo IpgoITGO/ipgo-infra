@@ -229,6 +229,8 @@ resource "aws_secretsmanager_secret" "ai_openai" {
 module "compute" {
   source = "../../modules/compute"
 
+  enable_legacy_alb = var.enable_legacy_alb
+
   name_prefix                           = local.name_prefix
   aws_region                            = var.aws_region
   vpc_id                                = module.network.vpc_id
@@ -276,11 +278,12 @@ module "monitoring" {
   cluster_name            = module.compute.cluster_name
   alb_arn_suffix          = module.compute.alb_arn_suffix
   target_group_arn_suffix = module.compute.server_target_group_arn_suffix
+  enable_legacy_alarms    = var.enable_legacy_alb
   database_identifier     = "${local.name_prefix}-postgres"
-  services = {
+  services = var.enable_legacy_alb ? {
     server = module.compute.server_service_name
     ai_api = module.compute.ai_api_service_name
-  }
+  } : {}
   alert_email        = var.alert_email
   monthly_budget_usd = var.monthly_budget_usd
   tags               = local.common_tags

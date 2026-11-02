@@ -35,23 +35,23 @@ output "service_connect_namespace_arn" {
 }
 
 output "alb_arn" {
-  value = aws_lb.this.arn
+  value = try(aws_lb.this[0].arn, null)
 }
 
 output "alb_arn_suffix" {
-  value = aws_lb.this.arn_suffix
+  value = try(aws_lb.this[0].arn_suffix, null)
 }
 
 output "server_target_group_arn_suffix" {
-  value = aws_lb_target_group.server.arn_suffix
+  value = try(aws_lb_target_group.server[0].arn_suffix, null)
 }
 
 output "alb_dns_name" {
-  value = aws_lb.this.dns_name
+  value = try(aws_lb.this[0].dns_name, null)
 }
 
 output "server_target_group_arn" {
-  value = aws_lb_target_group.server.arn
+  value = try(aws_lb_target_group.server[0].arn, null)
 }
 
 output "server_service_name" {

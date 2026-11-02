@@ -106,6 +106,7 @@ resource "aws_service_discovery_private_dns_namespace" "this" {
 }
 
 resource "aws_lb" "this" {
+  count                      = var.enable_legacy_alb ? 1 : 0
   name                       = substr("${var.name_prefix}-alb", 0, 32)
   internal                   = false
   load_balancer_type         = "application"
@@ -118,6 +119,7 @@ resource "aws_lb" "this" {
 }
 
 resource "aws_lb_target_group" "server" {
+  count       = var.enable_legacy_alb ? 1 : 0
   name        = substr("${var.name_prefix}-server", 0, 32)
   port        = 8080
   protocol    = "HTTP"
@@ -140,9 +142,9 @@ resource "aws_lb_target_group" "server" {
 }
 
 resource "aws_lb_listener" "https" {
-  count = var.certificate_arn == null ? 0 : 1
+  count = var.enable_legacy_alb && var.certificate_arn != null ? 1 : 0
 
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -150,20 +152,20 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.server.arn
+    target_group_arn = aws_lb_target_group.server[0].arn
   }
 }
 
 resource "aws_lb_listener" "http" {
-  count = var.certificate_arn != null || var.enable_http_dev_endpoint ? 1 : 0
+  count = var.enable_legacy_alb && (var.certificate_arn != null || var.enable_http_dev_endpoint) ? 1 : 0
 
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = var.certificate_arn == null ? "forward" : "redirect"
-    target_group_arn = var.certificate_arn == null ? aws_lb_target_group.server.arn : null
+    target_group_arn = var.certificate_arn == null ? aws_lb_target_group.server[0].arn : null
 
     dynamic "redirect" {
       for_each = var.certificate_arn == null ? [] : [1]
@@ -498,7 +500,7 @@ resource "aws_ecs_service" "server" {
   }
 
   dynamic "load_balancer" {
-    for_each = var.certificate_arn != null || var.enable_http_dev_endpoint ? [aws_lb_target_group.server.arn] : []
+    for_each = var.enable_legacy_alb && (var.certificate_arn != null || var.enable_http_dev_endpoint) ? [aws_lb_target_group.server[0].arn] : []
 
     content {
       target_group_arn = load_balancer.value
@@ -595,4 +597,14 @@ resource "aws_ecs_service" "ai_worker" {
   }
 
   tags = var.tags
+}
+
+moved {
+  from = aws_lb.this
+  to   = aws_lb.this[0]
+}
+
+moved {
+  from = aws_lb_target_group.server
+  to   = aws_lb_target_group.server[0]
 }
