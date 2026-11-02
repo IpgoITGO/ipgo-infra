@@ -29,6 +29,18 @@ variable "enable_http_dev_endpoint" {
   default     = false
 }
 
+variable "https_redirect_host" {
+  description = "Canonical API DNS hostname without a scheme, port or path."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.https_redirect_host == null ? true : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,63}$", var.https_redirect_host))
+    error_message = "https_redirect_host must be a DNS hostname without a scheme, port or path."
+  }
+}
+
 variable "db_engine_version" {
   description = "PostgreSQL version verified as orderable in the target Region."
   type        = string

@@ -154,35 +154,35 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-resource "aws_lb_listener" "http_redirect" {
-  count = var.certificate_arn == null ? 0 : 1
+resource "aws_lb_listener" "http" {
+  count = var.certificate_arn != null || var.enable_http_dev_endpoint ? 1 : 0
 
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
+    type             = var.certificate_arn == null ? "forward" : "redirect"
+    target_group_arn = var.certificate_arn == null ? aws_lb_target_group.server.arn : null
 
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+    dynamic "redirect" {
+      for_each = var.certificate_arn == null ? [] : [1]
+
+      content {
+        host        = var.https_redirect_host
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
     }
   }
+
+  depends_on = [aws_lb_listener.https]
 }
 
-resource "aws_lb_listener" "http_dev" {
-  count = var.certificate_arn == null && var.enable_http_dev_endpoint ? 1 : 0
-
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.server.arn
-  }
+moved {
+  from = aws_lb_listener.http_dev[0]
+  to   = aws_lb_listener.http[0]
 }
 
 resource "aws_ecs_task_definition" "server" {
@@ -519,7 +519,7 @@ resource "aws_ecs_service" "server" {
   # ECS rejects a target group until an ALB listener has associated it with
   # the load balancer. Initial setup without either public endpoint keeps
   # the service unattached; temporary HTTP and HTTPS both satisfy this dependency.
-  depends_on = [aws_lb_listener.https, aws_lb_listener.http_dev]
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http]
 
   tags = var.tags
 }

@@ -187,6 +187,13 @@ variable "enable_http_dev_endpoint" {
   default     = false
 }
 
+variable "https_redirect_host" {
+  description = "Canonical API hostname for HTTPS redirects, including requests to the ALB default DNS name."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "server_health_check_path" {
   description = "Spring Boot health check path."
   type        = string

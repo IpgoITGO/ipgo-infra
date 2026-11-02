@@ -262,6 +262,7 @@ module "compute" {
   ai_worker_desired_count               = var.ai_worker_desired_count
   certificate_arn                       = var.certificate_arn
   enable_http_dev_endpoint              = var.enable_http_dev_endpoint
+  https_redirect_host                   = var.https_redirect_host
   tags                                  = local.common_tags
 }
 
