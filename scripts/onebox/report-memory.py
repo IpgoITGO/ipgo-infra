@@ -2,7 +2,13 @@
 import pathlib
 import urllib.request
 
-import boto3
+# Sample before importing the AWS SDK so the short-lived reporter does not
+# add SDK startup memory to every host baseline measurement.
+memory = {
+    line.split(":", 1)[0]: int(line.split()[1])
+    for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
+    if line.startswith(("MemTotal:", "MemAvailable:"))
+}
 
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 request = urllib.request.Request(
@@ -19,11 +25,10 @@ request = urllib.request.Request(
 )
 with opener.open(request, timeout=2) as response:
     instance_id = response.read().decode()
-memory = {
-    line.split(":", 1)[0]: int(line.split()[1])
-    for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
-    if line.startswith(("MemTotal:", "MemAvailable:"))
-}
+
+# Load the publisher after taking the host sample; credentials stay on the node.
+import boto3
+
 boto3.client("cloudwatch").put_metric_data(
     Namespace="Ipgo/Onebox",
     MetricData=[{
