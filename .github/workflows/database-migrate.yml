@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type MIGRATE_DEV_V13 after reviewing the snapshot and rollback path"
+        description: "Type MIGRATE_DEV_V14 after reviewing the snapshot and rollback path"
         required: true
         type: string
       snapshot_id:
@@ -28,7 +28,7 @@ jobs:
   migrate:
     if: >-
       github.ref == 'refs/heads/dev' &&
-      inputs.confirmation == 'MIGRATE_DEV_V13' &&
+      inputs.confirmation == 'MIGRATE_DEV_V14' &&
       vars.AWS_ACCOUNT_ID != '' &&
       vars.AWS_APPLY_ROLE_ARN != ''
     runs-on: ubuntu-latest
@@ -44,7 +44,7 @@ jobs:
             echo "::error::server_commit_sha must be a full lowercase Git commit SHA."
             exit 1
           fi
-          if [[ ! "$SNAPSHOT_ID" =~ ^ipgo-dev-postgres-pre-v13-[0-9]{8}-[0-9]{6}$ ]]; then
+          if [[ ! "$SNAPSHOT_ID" =~ ^ipgo-dev-postgres-pre-v14-[0-9]{8}-[0-9]{6}$ ]]; then
             echo "::error::snapshot_id does not match the approved dev snapshot format."
             exit 1
           fi
@@ -86,11 +86,11 @@ jobs:
           fi
           aws ecs describe-services \
             --cluster ipgo-dev-cluster \
-            --services ipgo-dev-server ipgo-dev-ai-api ipgo-dev-ai-worker \
+            --services ipgo-dev-server ipgo-dev-ai-api ipgo-dev-ai-worker ipgo-dev-onebox-server ipgo-dev-onebox-ai-api \
             > "$RUNNER_TEMP/database-services.json"
           if ! jq -e '
             (.failures | length) == 0
-            and (.services | length) == 3
+            and (.services | length) == 5
             and all(.services[]; .desiredCount == 0 and .runningCount == 0 and .pendingCount == 0)
           ' "$RUNNER_TEMP/database-services.json" >/dev/null; then
             echo "::error::All Server and AI services must be fully stopped."
@@ -110,7 +110,7 @@ jobs:
       - name: Register immutable task revisions
         id: tasks
         run: |
-          for mode in bootstrap migrate verify; do
+          for mode in migrate verify; do
             family="ipgo-dev-database-${mode}"
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -132,9 +132,8 @@ jobs:
               --query 'taskDefinition.taskDefinitionArn' --output text)"
             echo "${mode}=${task_definition_arn}" >> "$GITHUB_OUTPUT"
           done
-      - name: Run bootstrap, migration and permission verification
+      - name: Run migration and permission verification
         env:
-          BOOTSTRAP_TASK: ${{ steps.tasks.outputs.bootstrap }}
           MIGRATE_TASK: ${{ steps.tasks.outputs.migrate }}
           VERIFY_TASK: ${{ steps.tasks.outputs.verify }}
         run: |
@@ -176,7 +175,6 @@ jobs:
             fi
           }
 
-          run_task "$BOOTSTRAP_TASK"
           run_task "$MIGRATE_TASK"
           run_task "$VERIFY_TASK"
-          echo "DB roles, Flyway V1-V13 and runtime permissions verified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Existing DB roles, Flyway V1-V14 and runtime permissions verified." >> "$GITHUB_STEP_SUMMARY"

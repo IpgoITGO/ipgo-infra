@@ -165,7 +165,8 @@ module "storage" {
 }
 
 module "messaging" {
-  source = "../../modules/messaging"
+  max_message_size = 1048576
+  source           = "../../modules/messaging"
 
   name_prefix = local.name_prefix
   tags        = local.common_tags
