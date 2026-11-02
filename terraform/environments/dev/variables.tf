@@ -24,7 +24,7 @@ variable "alert_email" {
 variable "monthly_budget_usd" {
   description = "Account-wide monthly USD cost alert threshold; alerts never stop services."
   type        = number
-  default     = 100
+  default     = 50
   validation {
     condition     = var.monthly_budget_usd > 0
     error_message = "monthly_budget_usd must be positive."

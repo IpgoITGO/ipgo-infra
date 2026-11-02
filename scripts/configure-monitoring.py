@@ -18,7 +18,7 @@ def settings(env):
         email = env.get("ALERT_EMAIL", "")
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             raise ValueError("Set the private AWS_ALERT_EMAIL secret before enabling monitoring.")
-        budget = env.get("MONTHLY_BUDGET_USD", "") or "100"
+        budget = env.get("MONTHLY_BUDGET_USD", "") or "50"
         try:
             amount = float(budget)
         except ValueError:
