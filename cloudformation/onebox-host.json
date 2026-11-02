@@ -55,7 +55,7 @@
         "Tags": [
           {
             "Key": "Purpose",
-            "Value": "ipgo-onebox-validation"
+            "Value": "onebox-bootstrap-artifacts"
           }
         ]
       }
@@ -150,7 +150,7 @@
         "Tags": [
           {
             "Key": "Purpose",
-            "Value": "ipgo-onebox-validation"
+            "Value": "consolidated-app-ai"
           }
         ]
       }
