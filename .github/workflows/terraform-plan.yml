@@ -38,6 +38,18 @@ jobs:
           role-session-name: ipgo-infra-plan
       - name: Verify AWS identity
         run: aws sts get-caller-identity --query Arn --output text >/dev/null
+      - name: Configure optional HTTPS certificate
+        env:
+          ACM_CERTIFICATE_ARN: ${{ vars.AWS_ACM_CERTIFICATE_ARN }}
+        shell: bash
+        run: |
+          if [ -n "$ACM_CERTIFICATE_ARN" ]; then
+            if [[ ! "$ACM_CERTIFICATE_ARN" =~ ^arn:aws:acm:ap-northeast-2:[0-9]{12}:certificate/[0-9a-f-]{36}$ ]]; then
+              echo "::error::AWS_ACM_CERTIFICATE_ARN must identify a Seoul ACM certificate."
+              exit 1
+            fi
+            printf 'TF_VAR_certificate_arn=%s\n' "$ACM_CERTIFICATE_ARN" >> "$GITHUB_ENV"
+          fi
       - name: Configure backend
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
@@ -94,3 +106,10 @@ jobs:
               ", replace=" + (($actions | map(select(. == "delete,create" or . == "create,delete")) | length) | tostring) +
               ", delete=" + (($actions | map(select(. == "delete")) | length) | tostring)'
           echo "Terraform change detected: $CHANGED" >> "$GITHUB_STEP_SUMMARY"
+          terraform -chdir=terraform/environments/dev show -json dev.tfplan \
+            | jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) |
+                (.change.before // {}) as $before | (.change.after // {}) as $after |
+                [((($before | keys) + ($after | keys)) | unique)[] |
+                  select($before[.] != $after[.])] as $keys |
+                [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
+            >> "$GITHUB_STEP_SUMMARY"
