@@ -2,6 +2,8 @@
 
 개발 서버의 단일 호스트 전환·비용·장애 알림·복구 절차는 [운영 문서](docs/onebox.md)를 참고합니다.
 
+인증 메일 설정 후보와 별도 적용 승인·검증·복구 절차는 [개발 메일 준비](docs/dev-mail-preparation.md)를 봅니다.
+
 IpgoITGO의 AWS 공통 인프라를 Terraform으로 관리하는 공개 저장소입니다. Spring Boot API, FastAPI 계산 엔진과 공통 데이터 계층이 사용하는 기반 자원을 정의합니다.
 
 > AWS 개발 환경은 운영 중입니다. 현재 단일 서버·CloudFront 구성과 실제 적용 여부는 [운영 문서](docs/onebox.md)를 기준으로 확인합니다. 개발용 SQS와 DLQ는 실제 엔진 결과 전달을 위해 메시지 최대 크기 1MiB를 사용하도록 준비합니다.
