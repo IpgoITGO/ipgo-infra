@@ -19,7 +19,8 @@ class ScopeTests(unittest.TestCase):
 
     def test_shared_or_legacy_tf_always_requires_real_plan(self):
         for path in ['terraform/environments/dev/main.tf', 'terraform/modules/database/main.tf',
-                     'terraform/bootstrap/main.tf', 'terraform/modules/rds-offhours-other/main.tf']:
+                     'terraform/bootstrap/main.tf', 'terraform/modules/rds-offhours-other/main.tf',
+                     '.github/workflows/terraform-apply.yml']:
             with self.subTest(path=path):
                 self.assertTrue(module.needs_legacy_dev([path]))
 

@@ -8,7 +8,8 @@ ISOLATED = ('terraform/environments/rds-offhours/', 'terraform/modules/rds-offho
 
 def needs_legacy_dev(paths, manual=False):
     # 수동 전체 plan과 기존 Terraform 경로는 종전 동작을 유지한다.
-    return manual or any(p.startswith('terraform/') and not p.startswith(ISOLATED) for p in paths)
+    return manual or any(p == '.github/workflows/terraform-apply.yml' or
+                         (p.startswith('terraform/') and not p.startswith(ISOLATED)) for p in paths)
 
 
 def changed_paths(base, head, cwd=None):

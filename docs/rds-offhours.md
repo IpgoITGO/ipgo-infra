@@ -107,7 +107,7 @@ terraform -chdir=terraform/modules/rds-offhours test
 
 Terraform test의 mock-provider apply는 메모리 안에서 mock 값으로 평가하며 실제 AWS apply가 아니다.
 단위/Stubber는 상태 전이와 API 구조, 로컬 PostgreSQL16 TLS 시험은 실제 고정 SQL·권한·인증서 거부를 검증한다.
-CI에 같은 검사를 추가했지만 push 전이므로 GitHub CI 성공으로 보고하지 않는다.
+CI에 같은 검사를 연결하며 로컬 결과와 구분한다. PR의 정확한 head/run을 확인한 뒤 CI 성공을 판정한다.
 독립 RDS root 변경은 모의 plan·실제 로컬 zip/DB 검사로 검증하며 기존 dev 전체 AWS refresh plan의 대상이 아니다.
 CI scope는 기존 dev/공용 모듈/bootstrap 변경과 수동 전체 plan을 유지하고 독립 root만 분리한다.
 최초 PR의 전체 dev plan은 기존 역할의 SNS:GetTopicAttributes·budgets:ViewBudget 부족으로 실패했다.
