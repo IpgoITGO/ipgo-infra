@@ -13,6 +13,41 @@ EXPECTED_DB_CONFIGURATION = {
     'PreferredMaintenanceWindow': 'sat:16:26-sat:16:56',
 }
 
+LLM_DISABLE_CONTRACT = 'openai-api-key-absent-v1'
+
+
+def llm_credentials_absent(containers):
+    """검토·고정한 이미지의 키 부재 계약. 외부 env/알 수 없는 LLM 설정은 거부한다."""
+    if not isinstance(containers, list) or not containers:
+        return False
+    for container in containers:
+        if (not isinstance(container, dict)
+                or not isinstance(container.get('environmentFiles', []), list)
+                or container.get('environmentFiles', [])):
+            return False
+        for field in ('environment', 'secrets'):
+            entries = container.get(field, [])
+            if not isinstance(entries, list):
+                return False
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get('name'), str):
+                    return False
+                name = entry['name'].upper()
+                if field == 'secrets':
+                    reference = entry.get('valueFrom')
+                    if not isinstance(reference, str):
+                        return False
+                    if any(word in name or word in reference.upper() for word in ('OPENAI', 'LLM')):
+                        return False
+                elif 'OPENAI' in name or 'LLM' in name:
+                    if name in ('LLM_ENABLED', 'OPENAI_ENABLED'):
+                        if not isinstance(entry.get('value'), str) or entry['value'].lower() != 'false':
+                            return False
+                    elif name not in ('OPENAI_MODEL', 'LLM_TIMEOUT_SEC'):
+                        # 빈 키/파일 경로/새 활성화 옵션도 추측해서 허용하지 않는다.
+                        return False
+    return True
+
 
 class AWS:
     def __init__(self, config, client):
@@ -131,24 +166,19 @@ class AWS:
         if set(manifest['service_definitions']) != expected_services:
             return False, False
         actual = {}
-        llm_off, explicit_disable = True, False
+        # 이 계약은 version/digest로 고정한 manifest의 소스·이미지 검토 증거다.
+        # 플래그가 없어도 키 부재로 차단되는 현 계약을 사용하되 미검토 manifest는 거부한다.
+        llm_off = manifest.get('llm_disable_contract') == LLM_DISABLE_CONTRACT
         for service, expected in manifest['service_definitions'].items():
             s = self.client('ecs').describe_services(cluster=self.c['cluster_arn'], services=[service])['services']
             if len(s) != 1 or s[0]['taskDefinition'] not in self.c['service_task_arns']:
                 return False, False
             td = self.client('ecs').describe_task_definition(taskDefinition=s[0]['taskDefinition'])['taskDefinition']
-            actual[service] = digest(td['containerDefinitions'])
-            for container in td['containerDefinitions']:
-                for e in container.get('environment', []):
-                    if 'LLM' in e['name'] or 'OPENAI' in e['name']:
-                        if e['name'] in ('LLM_ENABLED', 'OPENAI_ENABLED'):
-                            llm_off &= e['value'].lower() == 'false'
-                            explicit_disable |= e['value'].lower() == 'false'
-                        elif 'KEY' in e['name'] or 'TOKEN' in e['name']:
-                            llm_off = False
-                llm_off &= not any(('OPENAI' in e['name'] or 'LLM' in e['name'])
-                                    for e in container.get('secrets', []))
-        return bool(actual) and actual == manifest['service_definitions'], bool(actual) and llm_off and explicit_disable
+            containers = td['containerDefinitions']
+            actual[service] = digest(containers)
+            llm_off &= llm_credentials_absent(containers)
+        source_matches = bool(actual) and actual == manifest['service_definitions']
+        return source_matches, source_matches and llm_off
 
     def schedules_match(self, manifest):
         # 기존 group은 실측 manifest에서 명시한다. default로 추정하지 않는다.

@@ -38,14 +38,39 @@ Start/Stop intent를 DynamoDB에 먼저 영속화한다. SDK와 workflow의 쓰�
 - `prerequisites`: 안정성 완료/누적 초·야간/정리·DB 사용자/내부 작업 확인·회복 시험·다음 업무일 앱 복구·관리형 start 실검증.
 - `db_configuration`: 코드의 `EXPECTED_DB_CONFIGURATION` 전체. 엔진16.15, 암호화·삭제 보호·보존7일·기존 백업/유지보수 창을 모두 비교한다.
 - `service_definitions`: 고정 Server/AI task definition의 containerDefinitions digest. config의 정확한 TD ARN 목록 외 revision은 읽지 않는다.
+- `llm_disable_contract`: 검토한 소스/이미지의 `openai-api-key-absent-v1` 계약. 아래 검토 조건과 원문 증거를 포함해 manifest 전체 version/digest를 고정한다. 누락/다른 계약은 비활성 증거가 아니다.
 - `existing_schedules`: 실제 name/group/State·식·시간대·Target digest2개. default 그룹으로 추정하지 않는다.
 - 읽기 전용 role로 산출한 `schema_sha256`, 고정 DONE run의 `reference_sha256`, 검토한 과거 실패 execution ARN 목록.
 
 manifest는 기존 versioned S3 bucket의 정확한 key/VersionId/SHA256으로 고정한다. 빈 설정·원문 누락·기간 만료는 거부한다.
 실행 때 RDS 설정·당일 자동 backup snapshot available/PITR 시각·pending maintenance, EC2 writer host 전체 stopped,
-ECS의 다른 running/pending writer와 TD 소스·LLM 명시적 false/키 부재·기존 예약 binding을 실제 읽는다.
+ECS의 다른 running/pending writer와 TD 소스·검토한 LLM 키 부재 계약·기존 예약 binding을 실제 읽는다.
 현재 실행 이름까지 대조해 다른 workflow나 미검토 실패 이력이 있으면 중지하지 않는다. 과거 실패 이력은 삭제하지 않는다.
 manifest의 서비스/기존 예약 목록은 배포 설정의 전체 대상 집합과 대조해 일부 누락·예약 중복을 거부한다.
+
+
+### LLM 비활성 증거 계약
+
+현재 AI는 `ENGINE_MODE=real`에서도 `OPENAI_API_KEY`가 없으면 insight 클라이언트를
+만들기 전에 `LLM_NOT_CONFIGURED`로 차단한다. 계산 엔진 real은 제품 LLM 활성과 별개다.
+실제 앱이 읽지 않는 `LLM_ENABLED=false`를 필수로 넣는 대신, 검토한 이 동작을
+`llm_disable_contract=openai-api-key-absent-v1`로 명시한다. 이 문자열만으로 소스를 신뢰하지 않는다.
+승인할 manifest의 원문 증거에 정확한 이미지/소스, 키 검사 경로, 이미지 기본 환경과
+entrypoint/command가 키를 내장·로드·생성하지 않음을 검토해 기록해야 한다.
+소스나 계약이 바뀌면 새 검토/manifest가 필요하다. 기존 이미지/앱 설정은 이 수정으로 바꾸지 않는다.
+
+실행기는 전체 서비스/TD allowlist와 containerDefinitions digest가 맞을 때만 비활성 증거를
+인정하고, 모든 컨테이너에서 다음을 확인한다.
+
+- `OPENAI_API_KEY` 등 credential/파일 경로/알 수 없는 LLM·OpenAI 환경 변수는 빈 값이어도 거부한다.
+  현재 코드가 읽는 비밀값이 아닌 `OPENAI_MODEL`, `LLM_TIMEOUT_SEC`만 예외로 허용한다.
+- 선택적인 `LLM_ENABLED`, `OPENAI_ENABLED`가 있으면 둘 다 false여야 한다. false는 키 매핑을 무시하는 수단이 아니다.
+- LLM/OpenAI 이름 또는 참조 경로의 Secret 매핑, 외부 `environmentFiles`, 불완전한 증거는 거부한다.
+  기존 DB/JWT Secret은 그 이름·참조가 LLM과 무관하면 보존한다.
+
+현재 TD의 키 매핑 부재는 이미지 내부/향후 설정에 대한 전수 증명이 아니다. 승인한 소스/이미지 검토와
+DB의 설명 NONE/DISABLED 감사는 별도로 계속 필요하다. 로컬 테스트나 읽기 평가를 실제 LLM 호출,
+RDS 중지/기동 성공, 적용 승인으로 확대하지 않는다. 계약이 빠진 기존 manifest는 자동 마이그레이션하지 않는다.
 
 감사는 독립 Fargate task 1개이며 고정 이미지 digest·기존 subnet/SG를 전달한다. 공인 IP/NAT/EC2/상시 서비스는 만들지 않는다.
 AUDIT_KEY 외 command/SQL/role override는 전달하지 않는다. read-only root filesystem·비특권 uid·자체110초 종료 상한을 둔다.

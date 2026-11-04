@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'runtime/rds_offhours'))
 from aws_api import AWS
-from aws_api import EXPECTED_DB_CONFIGURATION
+from aws_api import EXPECTED_DB_CONFIGURATION, LLM_DISABLE_CONTRACT
 from controller import tick
 from dispatcher import dispatch
 from failure_guard import guard
@@ -437,6 +437,7 @@ class AdapterTests(unittest.TestCase):
         binding = {'State': 'ENABLED', 'ScheduleExpression': 'cron(test)',
                    'ScheduleExpressionTimezone': 'Asia/Seoul', 'Target': {'Arn': 'fixed'}}
         m = {'prerequisites': proof(), 'db_configuration': EXPECTED_DB_CONFIGURATION,
+             'llm_disable_contract': LLM_DISABLE_CONTRACT,
              'service_definitions': {'server': digest(containers), 'ai': digest(containers)},
              'existing_schedules': [{'name': x, 'group': 'actual-group', 'sha256': digest(binding)} for x in ('start', 'stop')]}
         self.api.manifest = lambda now: m
