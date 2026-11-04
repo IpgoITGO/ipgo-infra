@@ -1,5 +1,7 @@
 import importlib.util
 import unittest
+import tempfile
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,3 +29,26 @@ class ScopeTests(unittest.TestCase):
 
     def test_manual_dispatch_keeps_full_aws_plan(self):
         self.assertTrue(module.needs_legacy_dev([], manual=True))
+
+    def test_base_advancement_does_not_add_another_pr_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=folder, stderr=subprocess.DEVNULL).decode().strip()
+            git('init', '-q', '-b', 'main')
+            git('config', 'user.email', 'ci@example.invalid')
+            git('config', 'user.name', 'Local CI fixture')
+            (folder/'README').write_text('base')
+            git('add', '.'); git('commit', '-qm', 'base')
+            git('checkout', '-qb', 'rds')
+            rds = folder/'terraform/modules/rds-offhours/main.tf';rds.parent.mkdir(parents=True)
+            rds.write_text('# isolated')
+            git('add', '.');git('commit', '-qm', 'rds')
+            head = git('rev-parse', 'HEAD')
+            git('checkout', '-q', 'main')
+            dev = folder/'terraform/environments/dev/main.tf';dev.parent.mkdir(parents=True)
+            dev.write_text('# another PR')
+            git('add', '.');git('commit', '-qm', 'base advance')
+            paths = module.changed_paths(git('rev-parse', 'HEAD'), head, cwd=folder)
+            self.assertEqual(paths, ['terraform/modules/rds-offhours/main.tf'])
+            self.assertFalse(module.needs_legacy_dev(paths))
