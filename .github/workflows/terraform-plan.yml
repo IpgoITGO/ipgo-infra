@@ -17,8 +17,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      legacy_dev: ${{ steps.scope.outputs.legacy_dev }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Classify Terraform root without AWS credentials
+        id: scope
+        env:
+          SOURCE_EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci-terraform-scope.py
+
   plan:
+    needs: scope
     if: >-
+      needs.scope.outputs.legacy_dev == 'true' &&
       vars.AWS_ACCOUNT_ID != '' &&
       vars.AWS_PLAN_ROLE_ARN != '' &&
       vars.TF_STATE_BUCKET != '' &&

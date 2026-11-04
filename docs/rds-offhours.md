@@ -108,6 +108,10 @@ terraform -chdir=terraform/modules/rds-offhours test
 Terraform test의 mock-provider apply는 메모리 안에서 mock 값으로 평가하며 실제 AWS apply가 아니다.
 단위/Stubber는 상태 전이와 API 구조, 로컬 PostgreSQL16 TLS 시험은 실제 고정 SQL·권한·인증서 거부를 검증한다.
 CI에 같은 검사를 추가했지만 push 전이므로 GitHub CI 성공으로 보고하지 않는다.
+독립 RDS root 변경은 모의 plan·실제 로컬 zip/DB 검사로 검증하며 기존 dev 전체 AWS refresh plan의 대상이 아니다.
+CI scope는 기존 dev/공용 모듈/bootstrap 변경과 수동 전체 plan을 유지하고 독립 root만 분리한다.
+최초 PR의 전체 dev plan은 기존 역할의 SNS:GetTopicAttributes·budgets:ViewBudget 부족으로 실패했다.
+이번 PR에서 권한은 확대하지 않았다. 이후 독립 root 검증 통과나 dev plan 비대상 판정이 그 권한 문제의 해결을 뜻하지 않는다.
 공식 CA와 SHA256으로 고정한 Python base image로 로컬 감사 이미지를 빌드한다. ECR push/운영 digest 등록은 하지 않는다.
 
 실제 네트워크 경로·서비스 역할/DB 권한·Fargate 기동 시간·cold start/회복 시간·알림 전달·비용은 미실측이다.
