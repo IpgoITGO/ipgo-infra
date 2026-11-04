@@ -126,6 +126,38 @@ resource "aws_iam_role_policy_attachment" "github_plan_view" {
 
 data "aws_iam_policy_document" "github_plan_state" {
   statement {
+    sid       = "ReadExistingDevAlertTopicForPlan"
+    effect    = "Allow"
+    actions   = ["sns:GetTopicAttributes"]
+    resources = ["arn:${local.partition}:sns:${var.aws_region}:${local.account_id}:ipgo-dev-alerts"]
+  }
+
+  statement {
+    sid       = "ReadExistingDevBudgetForPlan"
+    effect    = "Allow"
+    actions   = ["budgets:ViewBudget", "budgets:ListTagsForResource"]
+    resources = ["arn:${local.partition}:budgets::${local.account_id}:budget/ipgo-dev-monthly-account-guard"]
+  }
+
+  statement {
+    sid     = "ReadStateBoundDevMetricAlarmsForPlan"
+    effect  = "Allow"
+    actions = ["cloudwatch:DescribeAlarms"]
+    # State serial 13에 기록된 정확한 9개 이름만 허용한다. 새 경보는 별도 검토한다.
+    resources = [for suffix in [
+      "ai_api-cpu-high",
+      "ai_api-memory-high",
+      "alb-errors",
+      "api-errors",
+      "database-memory-low",
+      "database-storage-low",
+      "server-cpu-high",
+      "server-memory-high",
+      "server-unavailable",
+    ] : "arn:${local.partition}:cloudwatch:${var.aws_region}:${local.account_id}:alarm:ipgo-dev-${suffix}"]
+  }
+
+  statement {
     sid       = "ListStateBucket"
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
