@@ -56,6 +56,8 @@ terraform -chdir=terraform/environments/dev validate
 
 `plan`과 `apply` 절차는 [운영 문서](docs/operations.md)를 따릅니다. 사용자 승인 전에는 `terraform apply`를 실행하지 않습니다.
 
+개발용 Gmail SMTP secret의 저장 경로·권한·적용 경계는 [메일 설정 운영 문서](docs/server-mail.md)를 참고합니다. Terraform은 secret의 메타데이터만 관리하며 앱 비밀번호와 서버 메일 설정 배포는 포함하지 않습니다.
+
 최초 bootstrap은 state bucket과 GitHub OIDC 역할을 만듭니다. 이후 `Terraform dev plan`은
 같은 저장소의 `dev` PR만, `Terraform dev apply`는 보호된 GitHub `dev` Environment에서 수동
 확인값과 reviewer 승인을 모두 통과한 경우만 실행됩니다. 초기 ECS service의 task 수는 0이므로

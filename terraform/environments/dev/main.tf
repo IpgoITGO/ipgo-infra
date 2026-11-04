@@ -300,6 +300,7 @@ module "identity" {
   server_secret_arns = [
     aws_secretsmanager_secret.server_database.arn,
     aws_secretsmanager_secret.server_jwt.arn,
+    aws_secretsmanager_secret.server_mail_password.arn,
   ]
   ai_secret_arns = [
     aws_secretsmanager_secret.ai_database.arn,
