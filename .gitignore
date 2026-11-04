@@ -14,3 +14,7 @@ backend.hcl
 .DS_Store
 .idea/
 .vscode/
+__pycache__/
+*.py[cod]
+runtime/rds_offhours/rds-ca.pem
+.venv-rds/
