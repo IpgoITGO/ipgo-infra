@@ -71,3 +71,14 @@ image와 Secret을 준비하기 전에 애플리케이션이 잘못 기동되지
 시간에만 public subnet에서 공인 IP를 받아 외부 통신하고, 보안 그룹은 ALB→Spring Boot와
 Spring Boot→FastAPI 진입만 허용합니다. ALB와 RDS는 생성된 동안 고정 비용이 발생하므로 실제
 apply 전에 예상 비용과 종료 시점을 검토해야 합니다.
+
+## 개발 배포 task 검증 읽기 권한
+
+bootstrap의 Server/AI GitHub 배포 역할에 `ecs:ListTasks`와 `ecs:DescribeTasks`를
+추가하는 코드입니다. `ArnEquals ecs:cluster`로 기존 개발 cluster만 허용하며 새 쓰기 권한은
+추가하지 않습니다. 앱 저장소의 배포 전후 task/image/HEALTHY 확인에 필요합니다.
+실제 IAM 적용은 하지 않았습니다. 별도 승인된 bootstrap plan/apply로 기존 변경과 영향이
+없는지 검토해야 하며, 이번 변경만 필요하다면 해당 최소 정책 delta를 확인합니다.
+역할 policy 제거/복구 시 task 검증은 조회 단계에서 실패할 수 있으므로 앱 workflow 적용 순서와
+함께 검토합니다. 로컬 검증은 backend 없는 init과 validate/fmt이며 실제 IAM 허용 결과를
+검증한 것은 아닙니다.

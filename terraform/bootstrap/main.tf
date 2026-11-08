@@ -442,6 +442,19 @@ data "aws_iam_policy_document" "github_server_deploy" {
   }
 
   statement {
+    sid       = "InspectDevTaskHealth"
+    effect    = "Allow"
+    actions   = ["ecs:ListTasks", "ecs:DescribeTasks"]
+    resources = ["*"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = ["arn:${local.partition}:ecs:${var.aws_region}:${local.account_id}:cluster/ipgo-dev-cluster"]
+    }
+  }
+
+  statement {
     sid       = "PassServerTaskRoles"
     effect    = "Allow"
     actions   = ["iam:PassRole"]
@@ -482,6 +495,19 @@ data "aws_iam_policy_document" "github_ai_deploy" {
       "ecs:UpdateService",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid       = "InspectDevTaskHealth"
+    effect    = "Allow"
+    actions   = ["ecs:ListTasks", "ecs:DescribeTasks"]
+    resources = ["*"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = ["arn:${local.partition}:ecs:${var.aws_region}:${local.account_id}:cluster/ipgo-dev-cluster"]
+    }
   }
 
   statement {
