@@ -3,7 +3,8 @@ import os
 import re
 import subprocess
 
-ISOLATED = ('terraform/environments/rds-offhours/', 'terraform/modules/rds-offhours/')
+ISOLATED = ('terraform/environments/rds-offhours/', 'terraform/modules/rds-offhours/',
+            'terraform/environments/d0-validation/', 'terraform/modules/d0-validation/')
 
 
 def needs_legacy_dev(paths, manual=False):

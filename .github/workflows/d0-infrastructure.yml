@@ -1,0 +1,255 @@
+name: D0 infrastructure and installation
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Approved full Infra workflow SHA"
+        required: true
+        type: string
+      operation:
+        type: choice
+        required: true
+        default: plan
+        options: [plan, apply, publish, install]
+      confirmation:
+        description: "PLAN_D0/APPLY_D0, *_REVOKE, PUBLISH_D0_IMAGE or INSTALL_D0"
+        required: true
+        type: string
+      expected_plan_sha256:
+        description: "Reviewed plan digest (apply only)"
+        default: ""
+        type: string
+      revoke_runtime:
+        description: "Revoke only the new runtime OIDC role/policy; preserve data"
+        default: false
+        type: boolean
+      helper_sha:
+        description: "Approved Server helper SHA already merged into dev (publish/install only)"
+        default: ""
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: d0-infrastructure
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/dev' && inputs.operation == 'publish' && vars.D0_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      HELPER_SHA: ${{ inputs.helper_sha }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify exact sources and publication approval
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]]
+          [[ "$HELPER_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_RUN_ATTEMPT" == '1' ]]
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ && "$CONFIRMATION" == 'PUBLISH_D0_IMAGE' ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: IpgoITGO/ipgo-server
+          ref: ${{ inputs.helper_sha }}
+          path: server
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require helper from reviewed Server dev
+        run: |
+          git -C server fetch origin dev
+          git -C server merge-base --is-ancestor "$HELPER_SHA" origin/dev
+          python3 -m venv "$RUNNER_TEMP/d0-publish-venv"
+          "$RUNNER_TEMP/d0-publish-venv/bin/pip" install boto3==1.43.121
+      - name: Verify protected Infra environment before OIDC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/d0_environment_gate.py
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-duration-seconds: 900
+          role-session-name: ipgo-d0-publish-${{ github.run_id }}
+          mask-aws-account-id: true
+      - name: Publish a new immutable D0 image
+        run: |
+          umask 077
+          export DOCKER_CONFIG="$RUNNER_TEMP/d0-docker-config"
+          "$RUNNER_TEMP/d0-publish-venv/bin/python" scripts/d0_publish_image.py check
+          mkdir -p "$DOCKER_CONFIG"
+          aws ecr get-login-password --region ap-northeast-2 |
+            docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com"
+          image="$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/ipgo-dev/database:d0-$HELPER_SHA"
+          docker build --platform linux/amd64 -f server/Dockerfile.d0 -t "$image" server
+          docker run --rm --network none --read-only --entrypoint python "$image" \
+            -I -c "import cryptography,psycopg,openpyxl,boto3; print('D0 imports verified')"
+          docker push "$image"
+          "$RUNNER_TEMP/d0-publish-venv/bin/python" scripts/d0_publish_image.py record
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-image-digest-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-image-digest.json
+          if-no-files-found: error
+  terraform:
+    if: >-
+      github.ref == 'refs/heads/dev' &&
+      (inputs.operation == 'plan' || inputs.operation == 'apply') &&
+      vars.D0_INFRA_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      OPERATION: ${{ inputs.operation }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+      REVOKE_RUNTIME: ${{ inputs.revoke_runtime }}
+      D0_INFRA_ENABLED: ${{ vars.D0_INFRA_ENABLED }}
+      D0_TERRAFORM_JSON: ${{ secrets.D0_TERRAFORM_JSON }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Gate exact source/configuration before OIDC
+        run: python3 scripts/d0_plan_guard.py gate
+      - name: Prepare plan encryption before OIDC
+        run: |
+          python3 -m venv "$RUNNER_TEMP/d0-plan-venv"
+          "$RUNNER_TEMP/d0-plan-venv/bin/pip" install -r scripts/d0-plan-requirements.txt
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+      - name: Verify protected Infra environment before OIDC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/d0_environment_gate.py
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: ipgo-d0-infrastructure
+      - name: Initialize isolated backend
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          Path(os.environ['RUNNER_TEMP']+'/d0-backend.hcl').write_text(
+              'bucket = "'+os.environ['TF_STATE_BUCKET']+'"\n'
+              'key = "environments/d0-validation/terraform.tfstate"\n'
+              'region = "ap-northeast-2"\nencrypt = true\nuse_lockfile = true\n')
+          PY
+          terraform -chdir=terraform/environments/d0-validation init \
+            -backend-config="$RUNNER_TEMP/d0-backend.hcl" -input=false
+          terraform -chdir=terraform/environments/d0-validation validate
+      - name: Create private plan and review digest/scope
+        run: |
+          if ! terraform -chdir=terraform/environments/d0-validation plan \
+            -input=false -var-file="$RUNNER_TEMP/d0.tfvars.json" \
+            -out="$RUNNER_TEMP/d0.tfplan" > "$RUNNER_TEMP/d0-plan.log" 2>&1; then
+            echo '::error::D0 plan failed; private values are not published.'
+            exit 1
+          fi
+          terraform -chdir=terraform/environments/d0-validation show \
+            -json "$RUNNER_TEMP/d0.tfplan" > "$RUNNER_TEMP/d0-plan.json"
+          python3 scripts/d0_plan_guard.py review "$RUNNER_TEMP/d0-plan.json"
+      - name: Seal full plan for NAS review
+        run: |
+          "$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_plan_envelope.py seal \
+            "$RUNNER_TEMP/d0-plan.json" "$RUNNER_TEMP/d0-plan-envelope.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-encrypted-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-plan-envelope.json
+          if-no-files-found: error
+      - name: Apply only the reviewed plan
+        if: inputs.operation == 'apply'
+        run: |
+          if ! terraform -chdir=terraform/environments/d0-validation apply \
+            -input=false "$RUNNER_TEMP/d0.tfplan" > "$RUNNER_TEMP/d0-apply.log" 2>&1; then
+            echo '::error::D0 apply failed. Stop activation and inspect the protected state.'
+            exit 1
+          fi
+          echo 'D0 isolated resources applied. DB installation and D0 data execution remain separate.'
+  install:
+    if: >-
+      github.ref == 'refs/heads/dev' && inputs.operation == 'install' &&
+      vars.D0_INSTALL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      HELPER_SHA: ${{ inputs.helper_sha }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      D0_INSTALL_ENABLED: ${{ vars.D0_INSTALL_ENABLED }}
+      D0_INSTALL_JSON: ${{ secrets.D0_INSTALL_JSON }}
+      D0_SIGNED_MANIFEST: ${{ secrets.D0_SIGNED_INSTALL_MANIFEST }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify immutable source inputs
+        shell: bash
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]]
+          [[ "$HELPER_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_RUN_ATTEMPT" == '1' ]]
+          [[ "$CONFIRMATION" == 'INSTALL_D0' ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: IpgoITGO/ipgo-server
+          ref: ${{ inputs.helper_sha }}
+          path: server
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require reviewed helper already in Server dev
+        run: |
+          git -C server fetch origin dev
+          git -C server merge-base --is-ancestor "$HELPER_SHA" origin/dev
+          python3 -m venv "$RUNNER_TEMP/d0-venv"
+          "$RUNNER_TEMP/d0-venv/bin/pip" install -r server/scripts/d0/requirements.txt
+      - id: gate
+        run: '"$RUNNER_TEMP/d0-venv/bin/python" server/scripts/d0/install_gate.py'
+      - name: Verify protected Infra environment before OIDC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/d0_environment_gate.py
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          allowed-account-ids: ${{ steps.gate.outputs.account_id }}
+          role-duration-seconds: 900
+          role-session-name: ipgo-d0-install-${{ github.run_id }}
+          mask-aws-account-id: true
+      - run: '"$RUNNER_TEMP/d0-venv/bin/python" server/scripts/d0/dispatch_install.py'
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-install-result-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/d0-install-result.json
+            ${{ runner.temp }}/d0-task-receipt.jsonl
+          if-no-files-found: ignore

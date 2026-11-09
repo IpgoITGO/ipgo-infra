@@ -11,6 +11,12 @@ spec.loader.exec_module(module)
 
 
 class ScopeTests(unittest.TestCase):
+    def test_isolated_d0_has_no_legacy_aws_plan_but_mixed_change_still_does(self):
+        paths=['terraform/environments/d0-validation/main.tf','terraform/modules/d0-validation/main.tf',
+               '.github/workflows/d0-infrastructure.yml','.github/workflows/terraform-check.yml']
+        self.assertFalse(module.needs_legacy_dev(paths))
+        self.assertTrue(module.needs_legacy_dev(paths+['terraform/modules/database/main.tf']))
+
     def test_isolated_rds_and_check_only_do_not_read_legacy_aws(self):
         self.assertFalse(module.needs_legacy_dev([
             'terraform/environments/rds-offhours/main.tf', 'terraform/modules/rds-offhours/main.tf',
