@@ -33,8 +33,9 @@ trust 불일치를 wildcard로 완화하지 않고 중단한다. 새 provider/�
 ## 단계별 승인과 workflow
 
 새 `d0-infrastructure.yml`은 workflow_dispatch 전용이며 push/PR로 실제 적용하지 않는다.
+기존 Infra dev environment의 자기승인·관리자 bypass 설정은 바꾸지 않는다. 새 Server runtime environment만 별도로 자기승인 금지를 요구한다.
 모든 job은 dev SHA 일치·첫 시도·명시 확인문구와 개별 ENABLED flag, 기존 `dev` environment를 요구한다.
-OIDC 전 실제 environment API를 읽어 승인자/자기승인금지/dev 한 branch 정책을 확인하며 실패 시 중단한다.
+OIDC 전 실제 environment API를 읽어 승인자/dev 한 branch 정책을 확인하며 실패 시 중단한다.
 GitHub token의 추가 권한은 해당 job의 Actions read, AWS OIDC write뿐이다. 장기 AWS key는 사용하지 않는다.
 
 1. **소스 병합/이미지 게시 승인:** Server·Infra PR head와 CI를 확인하고 병합 후 SHA를 확정한다.

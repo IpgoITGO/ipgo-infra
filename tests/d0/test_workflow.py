@@ -8,13 +8,15 @@ from d0_environment_gate import validate_environment
 
 
 class WorkflowTest(unittest.TestCase):
-    def test_infra_environment_requires_review_self_review_denial_and_exact_dev(self):
+    def test_infra_environment_preserves_existing_review_policy_and_requires_exact_dev(self):
         env = {'protection_rules': [{'type':'required_reviewers','reviewers':[{'id':1}], 'prevent_self_review':True}], 'deployment_branch_policy':{'custom_branch_policies':True,'protected_branches':False}}
         validate_environment(env, {'branch_policies':[{'name':'dev','type':'branch'}]})
         for branches in [[], [{'name':'*'}], [{'name':'main'}], [{'name':'dev','type':'tag'}]]:
             with self.assertRaises(ValueError):
                 validate_environment(env, {'branch_policies':branches})
         env['protection_rules'][0]['prevent_self_review']=False
+        validate_environment(env, {'branch_policies':[{'name':'dev'}]})
+        env['protection_rules'][0]['reviewers']=[]
         with self.assertRaises(ValueError):
             validate_environment(env, {'branch_policies':[{'name':'dev'}]})
 
