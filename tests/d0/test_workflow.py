@@ -32,3 +32,17 @@ class WorkflowTest(unittest.TestCase):
             part=text.split('  '+job+':',1)[1].split('\n  '+({'publish':'terraform','terraform':'install','install':'unused'}[job])+':')[0]
             self.assertLess(part.index('Verify protected Infra'),part.index('uses: aws-actions/configure-aws-credentials'))
             self.assertIn('environment: dev',part)
+
+    def test_iam_failure_blocks_backend_apply_and_install_and_uploads_only_ciphertext(self):
+        text=(ROOT/'.github/workflows/d0-infrastructure.yml').read_text()
+        terraform=text.split('  terraform:',1)[1].split('  install:',1)[0]
+        install=text.split('  install:',1)[1]
+        for part,target in [(terraform,'Initialize isolated backend'),(install,'server/scripts/d0/dispatch_install.py')]:
+            self.assertLess(part.index('scripts/d0_iam_preflight.py'),part.index('d0-iam-snapshot-envelope.json'))
+            self.assertLess(part.index('d0-iam-snapshot-envelope.json'),part.index(target))
+            self.assertNotIn('continue-on-error',part)
+            self.assertIn("steps.iam_preflight.outcome == 'failure'",part)
+            self.assertNotIn('path: ${{ runner.temp }}/d0-iam-snapshot.json',part)
+        self.assertIn('expected_iam_snapshot_sha256:',text)
+        self.assertIn("if: success() && inputs.operation != 'preflight'",terraform)
+        self.assertIn('EXPECTED_IAM_SNAPSHOT_SHA256',install)

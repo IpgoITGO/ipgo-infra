@@ -55,7 +55,10 @@ def main():
         raw = Path(args.input).read_bytes()
         digest = review(json.loads(raw), revoke=os.environ.get('REVOKE_RUNTIME')=='true')['planSha256']
         key = serialization.load_pem_public_key(PUBLIC_KEY.read_bytes())
-        context = {'workflowSha': os.environ['GITHUB_SHA'], 'runId': os.environ['GITHUB_RUN_ID'], 'planSha256': digest}
+        snapshot = json.loads((Path(os.environ['RUNNER_TEMP'])/'d0-iam-snapshot.json').read_text())
+        from d0_iam_preflight import validate_snapshot
+        validate_snapshot(snapshot, os.environ, json.loads(os.environ['D0_TERRAFORM_JSON']))
+        context = {'iamSnapshotSha256': snapshot['iamSnapshotSha256'], 'workflowSha': os.environ['GITHUB_SHA'], 'runId': os.environ['GITHUB_RUN_ID'], 'planSha256': digest}
         output = json.dumps(seal(raw, context, key), sort_keys=True).encode()
     else:
         key = serialization.load_pem_private_key(Path(args.private_key).read_bytes(), password=None)

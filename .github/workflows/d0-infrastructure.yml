@@ -10,13 +10,17 @@ on:
         type: choice
         required: true
         default: plan
-        options: [plan, apply, publish, install]
+        options: [preflight, plan, apply, publish, install]
       confirmation:
         description: "PLAN_D0/APPLY_D0, *_REVOKE, PUBLISH_D0_IMAGE or INSTALL_D0"
         required: true
         type: string
       expected_plan_sha256:
         description: "Reviewed plan digest (apply only)"
+        default: ""
+        type: string
+      expected_iam_snapshot_sha256:
+        description: "Reviewed IAM fingerprint (apply/install only)"
         default: ""
         type: string
       revoke_runtime:
@@ -103,7 +107,7 @@ jobs:
   terraform:
     if: >-
       github.ref == 'refs/heads/dev' &&
-      (inputs.operation == 'plan' || inputs.operation == 'apply') &&
+      (inputs.operation == 'preflight' || inputs.operation == 'plan' || inputs.operation == 'apply') &&
       vars.D0_INFRA_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -117,6 +121,8 @@ jobs:
       OPERATION: ${{ inputs.operation }}
       CONFIRMATION: ${{ inputs.confirmation }}
       EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+      EXPECTED_IAM_SNAPSHOT_SHA256: ${{ inputs.expected_iam_snapshot_sha256 }}
+      AWS_APPLY_ROLE_ARN: ${{ vars.AWS_APPLY_ROLE_ARN }}
       REVOKE_RUNTIME: ${{ inputs.revoke_runtime }}
       D0_INFRA_ENABLED: ${{ vars.D0_INFRA_ENABLED }}
       D0_TERRAFORM_JSON: ${{ secrets.D0_TERRAFORM_JSON }}
@@ -132,7 +138,8 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/d0-plan-venv"
           "$RUNNER_TEMP/d0-plan-venv/bin/pip" install -r scripts/d0-plan-requirements.txt
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+      - if: success() && inputs.operation != 'preflight'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: 1.17.1
           terraform_wrapper: false
@@ -146,7 +153,18 @@ jobs:
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
           allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
           role-session-name: ipgo-d0-infrastructure
+      - name: Read required IAM policies and seal the snapshot
+        id: iam_preflight
+        run: '"$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_iam_preflight.py'
+      - name: Preserve encrypted IAM evidence before any apply
+        if: always() && (steps.iam_preflight.outcome == 'success' || steps.iam_preflight.outcome == 'failure')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-iam-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-iam-snapshot-envelope.json
+          if-no-files-found: error
       - name: Initialize isolated backend
+        if: success() && inputs.operation != 'preflight'
         run: |
           python3 - <<'PY'
           import os
@@ -160,6 +178,7 @@ jobs:
             -backend-config="$RUNNER_TEMP/d0-backend.hcl" -input=false
           terraform -chdir=terraform/environments/d0-validation validate
       - name: Create private plan and review digest/scope
+        if: success() && inputs.operation != 'preflight'
         run: |
           if ! terraform -chdir=terraform/environments/d0-validation plan \
             -input=false -var-file="$RUNNER_TEMP/d0.tfvars.json" \
@@ -171,16 +190,18 @@ jobs:
             -json "$RUNNER_TEMP/d0.tfplan" > "$RUNNER_TEMP/d0-plan.json"
           python3 scripts/d0_plan_guard.py review "$RUNNER_TEMP/d0-plan.json"
       - name: Seal full plan for NAS review
+        if: success() && inputs.operation != 'preflight'
         run: |
           "$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_plan_envelope.py seal \
             "$RUNNER_TEMP/d0-plan.json" "$RUNNER_TEMP/d0-plan-envelope.json"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - if: success() && inputs.operation != 'preflight'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: d0-encrypted-plan-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-plan-envelope.json
           if-no-files-found: error
       - name: Apply only the reviewed plan
-        if: inputs.operation == 'apply'
+        if: success() && inputs.operation == 'apply'
         run: |
           if ! terraform -chdir=terraform/environments/d0-validation apply \
             -input=false "$RUNNER_TEMP/d0.tfplan" > "$RUNNER_TEMP/d0-apply.log" 2>&1; then
@@ -204,6 +225,10 @@ jobs:
       HELPER_SHA: ${{ inputs.helper_sha }}
       CONFIRMATION: ${{ inputs.confirmation }}
       D0_INSTALL_ENABLED: ${{ vars.D0_INSTALL_ENABLED }}
+      OPERATION: install
+      D0_TERRAFORM_JSON: ${{ secrets.D0_TERRAFORM_JSON }}
+      EXPECTED_IAM_SNAPSHOT_SHA256: ${{ inputs.expected_iam_snapshot_sha256 }}
+      AWS_APPLY_ROLE_ARN: ${{ vars.AWS_APPLY_ROLE_ARN }}
       D0_INSTALL_JSON: ${{ secrets.D0_INSTALL_JSON }}
       D0_SIGNED_MANIFEST: ${{ secrets.D0_SIGNED_INSTALL_MANIFEST }}
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
@@ -217,6 +242,7 @@ jobs:
           [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]]
           [[ "$HELPER_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_RUN_ATTEMPT" == '1' ]]
           [[ "$CONFIRMATION" == 'INSTALL_D0' ]]
+          [[ "$EXPECTED_IAM_SNAPSHOT_SHA256" =~ ^[a-f0-9]{64}$ ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: IpgoITGO/ipgo-server
@@ -244,7 +270,18 @@ jobs:
           role-duration-seconds: 900
           role-session-name: ipgo-d0-install-${{ github.run_id }}
           mask-aws-account-id: true
-      - run: '"$RUNNER_TEMP/d0-venv/bin/python" server/scripts/d0/dispatch_install.py'
+      - name: Read required IAM policies and seal the snapshot
+        id: iam_preflight
+        run: '"$RUNNER_TEMP/d0-venv/bin/python" scripts/d0_iam_preflight.py'
+      - name: Preserve encrypted IAM evidence before any apply
+        if: always() && (steps.iam_preflight.outcome == 'success' || steps.iam_preflight.outcome == 'failure')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-iam-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-iam-snapshot-envelope.json
+          if-no-files-found: error
+      - if: success() && steps.iam_preflight.outcome == 'success'
+        run: '"$RUNNER_TEMP/d0-venv/bin/python" server/scripts/d0/dispatch_install.py'
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
