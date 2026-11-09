@@ -148,3 +148,21 @@ plan 봉투에는 IAM fingerprint를 함께 묶는다. apply/install은 추가 �
 PR CI는 fake SDK/일회 RSA 키로 실패 차단과 암호화를 검증하고 AWS IAM에 접속하지 않는다.
 
 참고: [AWS PowerUserAccess 원문](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/PowerUserAccess.html)은 IAM 전체 읽기를 보장하지 않는다. 추가 read 권한 필요 여부는 실제 preflight 오류와 정책 snapshot으로 구분한다.
+
+## B1-R 선행 읽기 정책 관리 명세
+
+사용자가 승인한 별도 inline policy `ipgo-d0-iam-preflight-read`는
+[정책 template](permissions/d0-iam-preflight-read.json.template)를 기준으로 관리한다.
+infra_apply_role_arn에는 승인한 현재 계정의 `ipgo-github-terraform-apply` ARN 정확 1개만 렌더링한다.
+6개 읽기 액션과 AWS managed policy 2개 이외의 권한·wildcard·trust 변경을 넣지 않는다.
+
+이 정책은 기존 OIDC 역할이 자기 IAM 정책을 조회하기 위한 수동 선행 권한이다. 관리자 권한으로 계정·기존 role/trust/
+inline/attached/boundary·새 이름 부재를 실제 확인하고 HDD에 백업한 후, 승인된 정책 하나만 별도 API로 추가한다.
+기존 다른 inline policy는 수정하지 않는다. 같은 이름이 다른 내용으로 이미 있으면 중단하고 덮어쓰지 않는다.
+원래 없던 정책을 추가한 뒤 검증이 실패하면 그 이름 하나만 삭제해 직전 상태로 복구·대조한다.
+기존 조회 역할/DB bootstrap role/서비스 TD는 변경하거나 복구 대상으로 삼지 않는다.
+
+이 명세는 bootstrap 운영 관리 기록이며 Terraform state에 import했다고 표시하지 않는다.
+전체 bootstrap apply/import나 기존 IAM 정책 재정렬은 이 작업에서 수행하지 않는다.
+향후 bootstrap 상태를 관리할 때는 이 외부 선행 정책의 존재·내용·소유 방식을 먼저 대조하고 승인한 계획에서 보존하거나 명시적으로 인계한다.
+관리자 API 적용 전후 결과와 원본 snapshot은 비공개 운영 기록에 남기고 공개 PR에는 내부 계정·정책 원문을 올리지 않는다.
