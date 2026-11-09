@@ -45,7 +45,7 @@ GitHub token의 추가 권한은 해당 job의 Actions read, AWS OIDC write뿐�
 2. **실제 plan 승인:** `D0_INFRA_ENABLED=true`, metadata-only `D0_TERRAFORM_JSON` 등록 후 operation=plan,
    confirmation=PLAN_D0. backend init/state lock에는 S3 쓰기가 생길 수 있다. AWS 리소스 적용은 없다.
    plan은 runner의 비공개 임시파일에 보관하고 일반 로그에는 허용 주소/행위/planSha256만 남긴다.
-   이 digest는 입력과 전체 resource_changes를 포함한다. 실제 세부 plan은 승인된 관리자 경로에서 보호해 검토한다.
+   이 digest는 입력과 전체 resource_changes를 포함한다. 전체 plan JSON은 NAS 고정 공개키로 AES-256-GCM/RSA-OAEP 봉인한 artifact로만 전달한다. NAS에서 `scripts/d0_plan_envelope.py unseal envelope.json /protected/plan.json --private-key /protected/existing-private.pem`으로 0600 신규 파일에 복호화해 실제 세부 내용을 검토한다. private key는 NAS 밖으로 보내지 않으며 단계 A에서는 일회 테스트 키만 사용한다.
 3. **IAM·task 설치 적용 승인:** 같은 SHA/설정으로 operation=apply, confirmation=APPLY_D0,
    expected_plan_sha256=검토 digest. 새로 만든 plan이 다르면 적용하지 않는다. 변경·교체·import·설치 객체 삭제는 거부한다.
    새 create 리소스의 주소/이름이 allowlist와 달라도 거부한다. 최초 8개 외 변경은 승인 범위 재검토가 필요하다.
@@ -78,7 +78,7 @@ Secret은 prevent_destroy 및 복구 기간 30일, 새 log는 보존 30일이다
 - plan/IAM/environment/서명/날짜 검증 실패: 적용·task 실행 없이 중단한다. 인증 복구를 반복하거나 기존 조회 권한을 늘리지 않는다.
 - Terraform 부분 실패: runtime 활성화와 D0를 금지한다. 현재 state/실제 리소스와 직전 상태를 보호 저장한 후,
   승인된 복구 plan만 사용한다. 자동 destroy/기존 정책 덮어쓰기/기존 TD 변경은 없다.
-- install 실패: 원장을 보존하고 새 bootstrap role만 NOLOGIN으로 되돌리기를 시도한다.
+- install 실패: 원장을 보존하고 관리자의 기존 migrator membership은 설치 transaction 안에서만 SET/INHERIT를 일시 사용하고 원래 옵션으로 복원한다. 새 bootstrap role만 NOLOGIN으로 되돌리기를 시도한다.
   Secret/DB가 비원자적이므로 실패 위치에 따라 새 Secret 또는 NOLOGIN 객체가 남는다.
   DB 연결 유실 시 NOLOGIN 성공도 미확인일 수 있다. `INSTALL_DEACTIVATION_UNCONFIRMED`는 관리자 확인 후 처리한다.
   기존 역할/비밀번호/자료를 초기화하지 않는다. 자세한 DB 경계는 Server `docs/development/d0-oidc.md`를 따른다.
@@ -91,7 +91,9 @@ Secret은 prevent_destroy 및 복구 기간 30일, 새 log는 보존 30일이다
 ## 검증과 남은 항목
 
 ```bash
-python3 -m unittest discover -s tests/d0 -p 'test_*.py'
+python3 -m venv /tmp/d0-plan-venv
+/tmp/d0-plan-venv/bin/pip install -r scripts/d0-plan-requirements.txt
+/tmp/d0-plan-venv/bin/python -m unittest discover -s tests/d0 -p 'test_*.py'
 terraform fmt -check -recursive
 terraform -chdir=terraform/environments/d0-validation init -backend=false
 terraform -chdir=terraform/environments/d0-validation validate
