@@ -265,3 +265,8 @@ Spring은 공유 session 저장소가 아직 없으므로 dev task 수를 1로 �
 - 신규 서비스 중단: 해당 ECS service desired count를 0으로 내립니다.
 - 인프라: 승인된 이전 Git commit으로 새 plan을 만들고 데이터 자원 삭제 여부를 따로 확인합니다.
 - RDS와 S3는 장애 rollback 과정에서 자동 삭제하지 않습니다.
+
+
+## D0 전용 OIDC
+
+새 독립 state와 역할의 단계별 적용·실패 중단·runtime 권한 회수는 [D0 운영](d0-oidc.md)을 따른다. 기존 조회 역할과 서비스 TD는 변경하지 않는다.

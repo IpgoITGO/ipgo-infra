@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify D0 isolated plan and workflow gates
+        run: python3 -m unittest discover -s tests/d0 -p 'test_*.py'
       - name: Verify monitoring change boundaries
         run: python3 scripts/test-monitoring-plan.py
       - name: Verify RDS controller failure boundaries
@@ -32,6 +34,8 @@ jobs:
           - terraform/environments/dev
           - terraform/environments/rds-offhours
           - terraform/modules/rds-offhours
+          - terraform/environments/d0-validation
+          - terraform/modules/d0-validation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
@@ -39,7 +43,7 @@ jobs:
           terraform_version: 1.17.1
       - run: terraform -chdir=${{ matrix.root }} init -backend=false -input=false
       - run: terraform -chdir=${{ matrix.root }} validate
-      - if: contains(matrix.root, 'rds-offhours')
+      - if: contains(matrix.root, 'rds-offhours') || contains(matrix.root, 'd0-validation')
         run: terraform -chdir=${{ matrix.root }} test
       - if: matrix.root == 'terraform/modules/rds-offhours'
         run: python3 tests/rds_offhours/verify_lambda_archive.py terraform/modules/rds-offhours/.terraform/rds-offhours.zip
