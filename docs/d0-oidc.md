@@ -48,11 +48,11 @@ GitHub token의 추가 권한은 해당 job의 Actions read, AWS OIDC write뿐�
    plan은 runner의 비공개 임시파일에 보관하고 일반 로그에는 허용 주소/행위/planSha256만 남긴다.
    이 digest는 입력과 전체 resource_changes를 포함한다. 전체 plan JSON은 NAS 고정 공개키로 AES-256-GCM/RSA-OAEP 봉인한 artifact로만 전달한다. NAS에서 `scripts/d0_plan_envelope.py unseal envelope.json /protected/plan.json --private-key /protected/existing-private.pem`으로 0600 신규 파일에 복호화해 실제 세부 내용을 검토한다. private key는 NAS 밖으로 보내지 않으며 단계 A에서는 일회 테스트 키만 사용한다.
 3. **IAM·task 설치 적용 승인:** 같은 SHA/설정으로 operation=apply, confirmation=APPLY_D0,
-   expected_plan_sha256=검토 digest. 새로 만든 plan이 다르면 적용하지 않는다. 변경·교체·import·설치 객체 삭제는 거부한다.
+   expected_plan_sha256=검토 digest 및 expected_iam_snapshot_sha256=검토 IAM fingerprint. 새로 만든 plan이 다르면 적용하지 않는다. 변경·교체·import·설치 객체 삭제는 거부한다.
    새 create 리소스의 주소/이름이 allowlist와 달라도 거부한다. 최초 8개 외 변경은 승인 범위 재검토가 필요하다.
 4. **DB 최초 설치 승인:** `D0_INSTALL_ENABLED=true`, D0_INSTALL_JSON=installation output value,
    D0_SIGNED_INSTALL_MANIFEST=NAS에서 서명한 install 봉투(Base64) 등록. operation=install,
-   confirmation=INSTALL_D0, exact Infra/Server SHA를 사용한다. 고정 install revision 한 task만 실행한다.
+   confirmation=INSTALL_D0, expected_iam_snapshot_sha256=설치 전 검토 fingerprint, exact Infra/Server SHA를 사용한다. 고정 install revision 한 task만 실행한다.
    DB 새 schema/NOLOGIN role/원장/함수 생성, 새 password Secret 저장과 제한 로그인 활성화만 한다.
 5. **검증·runtime 활성화 승인:** 새 DB role 직접 SELECT/UPDATE/DELETE/CREATE/기존 role 전환 거부와
    함수 성공을 실제 DB에서 확인한다. 기존 권한을 확대하지 않는다. runtime_enabled=true 실제 plan 2개만 검토·적용한다.
@@ -108,3 +108,43 @@ mock provider tests는 초기 8개/활성화 10개 경계와 기존 role 혼입 
 단계 A에는 실제 cloud plan, OIDC assume, ECR push, DB 설치, D0/LLM 호출과 다음날 업무 검증을 하지 않는다.
 새 Secret·Fargate·로그·ECR 저장 및 전송은 AWS 비용이 추가된다. 적용 승인안에서 서울 리전 현재 요금으로 산정한다.
 D0는 계산/LLM 0이어야 하지만 계정 전체 LLM cap을 다시 설정하지 않는다. 기존 real/지속 LLM/월 제한 OFF/시작 시각을 유지한다.
+
+
+## IAM 사전 조회·스냅샷 (IPGO-175 / Issue #44)
+
+기존 Infra OIDC 역할을 사용하며 IAM 권한은 이 변경에서 추가하지 않는다. `operation=preflight`,
+`confirmation=PREFLIGHT_D0`, 정확 expected_sha, repository D0_INFRA_ENABLED=true로 읽기만 할 수 있다.
+preflight는 Terraform backend/state lock, plan/apply, RunTask, ECR push, DB에 접근하지 않는다.
+job-level if flags는 environment 변수가 아닌 repository variables로 등록하고 일회 검증 후 false로 마감한다.
+GitHub 목록 조회는 전체 페이지와 total_count를 반드시 대조한다.
+
+기존 `dev` environment 확인과 OIDC 발급 다음에, backend init보다 먼저 아래를 읽는다.
+
+- STS 실제 계정/assumed role을 정확한 `ipgo-github-terraform-apply`와 대조한다.
+- 그 역할 자신과 기존 `ipgo-dev-database-bootstrap-execution`, 새 D0 execution/install role의
+  GetRole/trust/inline 정책 전체 페이지/attached 정책 전체 페이지/managed 정책 default version 원문과 boundary를 확인한다.
+- runtime_enabled 또는 revoke에서만 새 runtime OIDC role도 관찰한다. 기존 역할의 NoSuchEntity는 실패다.
+  새 생성 대상만 GetRole NoSuchEntity를 정상 부재로 기록한다. AccessDenied/다른 조회 오류를 부재로 바꾸지 않는다.
+- attached/boundary는 GetPolicy/GetPolicyVersion이 필요하다. 정책/계정 전체 목록이나 이전 version을 일괄 조회하지 않는다.
+  권한이 없으면 조회를 생략하거나 정책을 자동 추가하지 않고 중단한다.
+
+원문/실패 단계/API/대상 요청은 runner 0600 파일에 쓰고 고정 NAS 공개키로 AES-256-GCM/RSA-OAEP 봉인한다.
+공개 로그에는 성공 여부·fingerprint·고정 오류 코드만, artifact에는 `d0-iam-snapshot-envelope.json`만 올린다.
+실패한 조회도 가능한 부분 스냅샷을 봉인·보존한 뒤 실패한다. 조회/암호화/업로드가 실패하면 backend/apply/install을 시작하지 않는다.
+프로세스 강제 종료/runner 유실은 암호화 artifact 보존까지 보장할 수 없으며 이때도 적용을 성공으로 간주하지 않는다.
+NAS에서 기존 `scripts/d0_plan_envelope.py unseal`과 원래 private key로 복호화한다. private key를 GitHub에 보내지 않는다.
+
+IAM fingerprint는 source SHA·계정·역할 identity/trust/inline/managed default version·boundary·존재 상태·설정을 바인딩한다.
+세션 이름/시각/runId는 fingerprint에서 제외하되 봉투 및 원문 context에는 남겨 provenance를 확인한다.
+plan에는 같은 run의 완료된 IAM 스냅샷이 필요하며 새 role이 이미 있으면 create 충돌로 중단한다.
+plan 봉투에는 IAM fingerprint를 함께 묶는다. apply/install은 추가 입력 `expected_iam_snapshot_sha256`와
+당일 실제 조회 fingerprint가 일치해야 한다. plan의 expected_plan_sha256도 별도로 필요하다.
+설치 전에는 새 role들이 실제 존재해야 한다. initial apply 후에는 존재 상태와 정책이 바뀌므로 새 fingerprint를 검토하고
+설치 승인을 받는다. fingerprint를 맞추기 위해 임의로 최신 값을 재승인 없이 사용하지 않는다.
+
+이 스냅샷은 여러 AWS 읽기의 관측 기록이며 원자적 IAM snapshot, IAM simulator, SCP/session policy까지 포함한
+유효 권한 허용 증명이 아니다. source에서 자신의 role과 managed policy 원문 읽기는 확인되지 않았으므로 실제 IAM 조회가
+거부될 수 있다. 그 경우 최소 읽기 범위만 별도 승인안으로 제시한다. 기존 조회 역할을 확대하지 않는다.
+PR CI는 fake SDK/일회 RSA 키로 실패 차단과 암호화를 검증하고 AWS IAM에 접속하지 않는다.
+
+참고: [AWS PowerUserAccess 원문](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/PowerUserAccess.html)은 IAM 전체 읽기를 보장하지 않는다. 추가 read 권한 필요 여부는 실제 preflight 오류와 정책 snapshot으로 구분한다.

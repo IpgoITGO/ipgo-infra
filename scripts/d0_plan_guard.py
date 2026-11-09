@@ -35,7 +35,7 @@ def validate_job(env):
             and env['EXPECTED_SHA'] == env.get('GITHUB_SHA'), 'APPROVED_SHA')
     require(env.get('D0_INFRA_ENABLED') == 'true', 'D0_INFRA_DISABLED')
     operation = env.get('OPERATION')
-    require(operation in ('plan','apply'), 'OPERATION')
+    require(operation in ('preflight','plan','apply'), 'OPERATION')
     revoke = env.get('REVOKE_RUNTIME') == 'true'
     expected_confirmation = operation.upper() + ('_D0_REVOKE' if revoke else '_D0')
     require(env.get('CONFIRMATION') == expected_confirmation, 'CONFIRMATION')
@@ -49,6 +49,7 @@ def validate_job(env):
     require(re.fullmatch('[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]',env.get('TF_STATE_BUCKET','')), 'STATE_BUCKET')
     if operation == 'apply':
         require(re.fullmatch('[a-f0-9]{64}',env.get('EXPECTED_PLAN_SHA256','')), 'REVIEWED_PLAN_REQUIRED')
+        require(re.fullmatch('[a-f0-9]{64}',env.get('EXPECTED_IAM_SNAPSHOT_SHA256','')), 'REVIEWED_IAM_REQUIRED')
     return cfg
 
 
@@ -87,7 +88,13 @@ if __name__ == '__main__':
                 json.dump(config,file)
             print('D0 Infra 입력 검사 성공. 설정 값 출력 없음.')
         elif sys.argv[1] == 'review':
-            result = review(json.loads(Path(sys.argv[2]).read_text()),revoke=os.environ.get('REVOKE_RUNTIME')=='true')
+            from d0_iam_preflight import validate_snapshot, check_plan
+            config = validate_job(os.environ)
+            snapshot = json.loads((Path(os.environ['RUNNER_TEMP'])/'d0-iam-snapshot.json').read_text())
+            validate_snapshot(snapshot, os.environ, config)
+            plan = json.loads(Path(sys.argv[2]).read_text())
+            check_plan(snapshot, plan)
+            result = review(plan,revoke=os.environ.get('REVOKE_RUNTIME')=='true')
             if os.environ.get('OPERATION') == 'apply':
                 require(result['planSha256'] == os.environ.get('EXPECTED_PLAN_SHA256'), 'PLAN_CHANGED')
             print(json.dumps(result,sort_keys=True))

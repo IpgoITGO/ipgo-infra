@@ -55,6 +55,10 @@ class PlanTest(unittest.TestCase):
                           ('GITHUB_REF','refs/heads/main'),('GITHUB_RUN_ATTEMPT','2')]:
             with self.subTest(key=key),self.assertRaises(ValueError):guard.validate_job(dict(env,**{key:value}))
         with self.assertRaises(ValueError):guard.validate_job(dict(env,OPERATION='apply',CONFIRMATION='APPLY_D0'))
+        with self.assertRaisesRegex(ValueError,'REVIEWED_IAM_REQUIRED'):
+            guard.validate_job(dict(env,OPERATION='apply',CONFIRMATION='APPLY_D0',EXPECTED_PLAN_SHA256='a'*64))
+        guard.validate_job(dict(env,OPERATION='apply',CONFIRMATION='APPLY_D0',EXPECTED_PLAN_SHA256='a'*64,EXPECTED_IAM_SNAPSHOT_SHA256='b'*64))
+        guard.validate_job(dict(env,OPERATION='preflight',CONFIRMATION='PREFLIGHT_D0'))
 
 
 if __name__=='__main__':unittest.main()
