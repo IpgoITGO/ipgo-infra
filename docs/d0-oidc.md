@@ -61,7 +61,7 @@ GitHub token의 추가 권한은 해당 job의 Actions read, AWS OIDC write뿐�
 
 Flags/GitHub 환경/Secrets는 이 PR이 생성·등록하지 않는다. 특히 실제 registry digest/task revision이 아직 없으면
 예시값으로 서명·dispatch하지 않는다. source 병합만으로 기존 Server/AI 서비스가 갱신되지 않게 기존 배포 workflow의
-변경 경로와 dispatch를 확인한다. Server dev push 자동 배포 여부를 병합 승인안에 반드시 포함한다.
+변경 경로와 dispatch를 확인한다. 현재 Server 배포는 workflow_dispatch 전용이며 dev push로 서비스가 배포되지 않는다. 병합 시점에도 이를 재확인한다.
 
 ## Terraform 설정 형식
 
@@ -69,7 +69,7 @@ D0_TERRAFORM_JSON 최상위는 enabled, runtime_enabled, configuration 세 필�
 configuration은 account_id, image_uri(digest), bootstrap_execution_role_arn, master_secret_arn,
 installation_log_group, db_host, db_name, subnet_ids, security_group_ids를 담는다.
 실제 계정/내부 endpoint/ARN/tfvars/plan/state는 공개 repo나 PR에 게시하지 않는다.
-기존 dev DB-task SG·private subnet을 재사용하며 SG ingress, NAT, RDS 파라미터를 변경하지 않는다.
+기존 dev DB-task SG·public subnet을 재사용하며 task에 일시 public IPv4/ENI가 생긴다. inbound listener/port mapping은 없다. SG ingress, NAT, RDS 파라미터를 변경하지 않는다.
 Secret은 새 `/ipgo/dev/d0-bootstrap` 하나만, log는 새 `/ipgo/dev/d0-validation` 하나만 만든다.
 Secret은 prevent_destroy 및 복구 기간 30일, 새 log는 보존 30일이다.
 
