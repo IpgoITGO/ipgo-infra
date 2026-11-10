@@ -157,13 +157,13 @@ def validate_snapshot(snapshot, env, configuration):
             and snapshot['configurationSha256'] == digest(configuration), 'IAM_SNAPSHOT_CONTEXT')
     require(snapshot.get('iamSnapshotSha256') == fingerprint(snapshot), 'IAM_SNAPSHOT_INTEGRITY')
     required = targets(configuration['configuration'], env['AWS_APPLY_ROLE_ARN'],
-                       install=env['OPERATION']=='install', include_runner=configuration.get('runtime_enabled') is True
+                       install=env['OPERATION'] in ('install','deactivate'), include_runner=configuration.get('runtime_enabled') is True
                        or env.get('REVOKE_RUNTIME')=='true')
     require(set(snapshot['roles']) == {r['alias'] for r in required}, 'IAM_SNAPSHOT_TARGETS')
     require(all(snapshot['roles'][r['alias']]['arn']==r['arn'] and
                 (r['optional'] or snapshot['roles'][r['alias']]['exists'] is True) for r in required),
             'IAM_SNAPSHOT_REQUIRED_ROLES')
-    if env.get('OPERATION') in ('apply', 'install'):
+    if env.get('OPERATION') in ('apply', 'install', 'deactivate'):
         require(snapshot['iamSnapshotSha256'] == env.get('EXPECTED_IAM_SNAPSHOT_SHA256'), 'IAM_SNAPSHOT_CHANGED')
 
 
@@ -202,15 +202,15 @@ def main():
     require(configuration.get('enabled') is True and configuration['configuration']['account_id'] == env['AWS_ACCOUNT_ID'],
             'CONFIGURATION_BOUNDARY')
     operation = env.get('OPERATION')
-    require(operation in ('preflight', 'plan', 'apply', 'install'), 'OPERATION')
-    require(env.get('D0_INSTALL_ENABLED' if operation == 'install' else 'D0_INFRA_ENABLED') == 'true', 'DISABLED')
-    if operation in ('apply', 'install'):
+    require(operation in ('preflight', 'plan', 'apply', 'install', 'deactivate'), 'OPERATION')
+    require(env.get('D0_INSTALL_ENABLED' if operation in ('install', 'deactivate') else 'D0_INFRA_ENABLED') == 'true', 'DISABLED')
+    if operation in ('apply', 'install', 'deactivate'):
         require(re.fullmatch('[a-f0-9]{64}', env.get('EXPECTED_IAM_SNAPSHOT_SHA256', '')), 'REVIEWED_IAM_REQUIRED')
     sdk = Config(retries={'total_max_attempts': 1}, connect_timeout=5, read_timeout=20)
     snapshot = collect(boto3.client('sts', region_name='ap-northeast-2', config=sdk),
                        boto3.client('iam', region_name='ap-northeast-2', config=sdk),
                        configuration['configuration'], env['AWS_APPLY_ROLE_ARN'], env['GITHUB_SHA'], digest(configuration),
-                       run_id=env['GITHUB_RUN_ID'], operation=operation, install=operation == 'install',
+                       run_id=env['GITHUB_RUN_ID'], operation=operation, install=operation in ('install', 'deactivate'),
                        include_runner=configuration.get('runtime_enabled') is True or env.get('REVOKE_RUNTIME') == 'true')
     if snapshot['success']:
         try:

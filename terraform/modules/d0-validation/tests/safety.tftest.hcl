@@ -32,6 +32,10 @@ variables {
 run "installation_has_no_runtime_oidc" {
   command = plan
   assert {
+    condition     = aws_ecs_task_definition.install.skip_destroy && aws_ecs_task_definition.runtime.skip_destroy
+    error_message = "Both D0 task definitions must retain prior revisions."
+  }
+  assert {
     condition     = length(aws_iam_role.runner) == 0 && length(aws_iam_role_policy.runner) == 0
     error_message = "Installation must not enable runtime OIDC."
   }

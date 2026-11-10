@@ -63,6 +63,8 @@ resource "aws_iam_role_policy" "installer" {
 }
 
 resource "aws_ecs_task_definition" "runtime" {
+  skip_destroy = true
+  lifecycle { create_before_destroy = true }
   family                   = "ipgo-dev-d0-validation"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -97,6 +99,8 @@ resource "aws_ecs_task_definition" "runtime" {
 }
 
 resource "aws_ecs_task_definition" "install" {
+  skip_destroy = true
+  lifecycle { create_before_destroy = true }
   family                   = "ipgo-dev-d0-install"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"

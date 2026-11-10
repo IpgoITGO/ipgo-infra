@@ -166,6 +166,14 @@ class IamTest(unittest.TestCase):
         s['roles']['caller']['inline'].clear()
         with self.assertRaisesRegex(PreflightError,'INTEGRITY'):validate_snapshot(s,env,CFG)
 
+    def test_recovery_requires_install_roles_and_reviewed_iam_fingerprint(self):
+        s=snapshot(FakeIam(new_exists=True),operation='deactivate',install=True)
+        env=environment('deactivate')
+        with self.assertRaisesRegex(PreflightError,'IAM_SNAPSHOT_CHANGED'):validate_snapshot(s,env,CFG)
+        env['EXPECTED_IAM_SNAPSHOT_SHA256']=s['iamSnapshotSha256'];validate_snapshot(s,env,CFG)
+        missing=snapshot(operation='deactivate',install=True)
+        self.assertFalse(missing['success'])
+
     def test_existing_new_role_collides_with_create_plan(self):
         p={'resource_changes':[{'type':'aws_iam_role','change':{'actions':['create'],'after':{'name':'ipgo-dev-d0-execution'}}}]}
         check_plan(snapshot(),p)

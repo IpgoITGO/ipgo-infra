@@ -53,7 +53,11 @@ def main():
     if args.mode == 'seal':
         from d0_plan_guard import review
         raw = Path(args.input).read_bytes()
-        digest = review(json.loads(raw), revoke=os.environ.get('REVOKE_RUNTIME')=='true')['planSha256']
+        configuration = json.loads(os.environ['D0_TERRAFORM_JSON'])
+        digest = review(json.loads(raw), revoke=os.environ.get('REVOKE_RUNTIME')=='true',
+                        protect=os.environ.get('PROTECT_TASKS')=='true',
+                        refresh=os.environ.get('REFRESH_TASKS')=='true',
+                        image_uri=configuration['configuration']['image_uri'])['planSha256']
         key = serialization.load_pem_public_key(PUBLIC_KEY.read_bytes())
         snapshot = json.loads((Path(os.environ['RUNNER_TEMP'])/'d0-iam-snapshot.json').read_text())
         from d0_iam_preflight import validate_snapshot

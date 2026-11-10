@@ -46,3 +46,22 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('expected_iam_snapshot_sha256:',text)
         self.assertIn("if: success() && inputs.operation != 'preflight'",terraform)
         self.assertIn('EXPECTED_IAM_SNAPSHOT_SHA256',install)
+
+    def test_recovery_and_protection_modes_keep_existing_guards(self):
+        text=(ROOT/'.github/workflows/d0-infrastructure.yml').read_text()
+        self.assertIn('PROTECT_TASKS: ${{ inputs.protect_tasks }}',text)
+        self.assertIn('REFRESH_TASKS: ${{ inputs.refresh_tasks }}',text)
+        self.assertIn("inputs.operation == 'deactivate'",text)
+        self.assertIn("\"$CONFIRMATION\" == 'DEACTIVATE_D0'",text)
+        install=text.split('  install:',1)[1]
+        self.assertIn('EXPECTED_IAM_SNAPSHOT_SHA256:',install)
+        self.assertLess(install.index('install_gate.py'),install.index('configure-aws-credentials'))
+
+    def test_previous_revision_read_and_encrypted_receipt_precede_apply(self):
+        text=(ROOT/'.github/workflows/d0-infrastructure.yml').read_text()
+        job=text.split('  terraform:',1)[1].split('  install:',1)[0]
+        self.assertLess(job.index('scripts/d0_verify_tasks.py before'),job.index('Apply only the reviewed plan'))
+        self.assertLess(job.index('d0-task-revisions-before-envelope.json'),job.index('Apply only the reviewed plan'))
+        self.assertLess(job.index('Apply only the reviewed plan'),job.index('scripts/d0_verify_tasks.py after'))
+        self.assertIn('if-no-files-found: error',job)
+        self.assertNotIn('continue-on-error',job)
