@@ -178,7 +178,8 @@ AWS provider 6.72.0의 삭제 경로는 **제거되는 이전 state의 skip_dest
 
 1. `protect_tasks=true`, `refresh_tasks=false`, `revoke_runtime=false`, `runtime_enabled=false`.
    `PLAN_D0_TASK_PROTECT` / `APPLY_D0_TASK_PROTECT`와 정확 SHA·plan/IAM 지문을 사용한다.
-   현재 이미지 그대로, 정확 install/runtime 두 TD의 `skip_destroy` false→true update만 허용한다.
+   현재 이미지 그대로, 정확 install/runtime 두 TD 범위에서 `skip_destroy` false→true update만 허용한다.
+   이미 보호된 TD는 검증된 no-op이어야 한다.
    ARN/revision/컨테이너/권한 등 다른 값·unknown·drift가 있으면 중단한다. 이 단계는 새 이미지가 필요 없다.
    성공 후 보호된 state의 값과 기존 두 revision ACTIVE를 확인한다. 실패 시 state를 확인하고 다음 단계는 금지한다.
    이미 true인 경우 이 모드를 반복하지 않고 현재 state/실제 revision을 읽어 다음 plan을 검토한다.
@@ -213,3 +214,15 @@ TD 보호/갱신 apply에는 기존 두 ARN·이미지·ACTIVE 사전 조회와 
 ACTIVE를 다시 조회해 별도 암호화 근거를 남긴다. 이 사후 검증/업로드가 실패해도 적용 자체가 자동 취소된 것은
 아니므로 DB 설치/D0를 중단하고 실제 state/두 family를 확인한다. 부분 apply 실패는 자동 재실행/일괄 롤백하지 않는다.
 이 경로에서 ECS API는 DescribeTaskDefinition뿐이며 IAM 정책·서비스·RunTask를 변경하지 않는다.
+
+### 부분 적용 뒤의 제한된 재계획
+
+보호/갱신의 범위는 두 D0 TD 이름으로 고정한다. 실제 변경 개수는 필요한 1~2개이며,
+이미 목표 상태인 나머지 TD는 before=after·skip_destroy=true·모든 값 확정·목표 image 일치인 no-op으로만 허용한다.
+두 TD 중 하나가 plan에 없거나, no-op에 숨은 속성/역할 변경·unknown·보호 해제가 있으면 거부한다.
+둘 다 이미 목표 상태인 0-change plan은 상태 확인 근거이며 apply하지 않는다.
+
+보호가 한쪽만 state에 반영된 경우 새 protect plan은 나머지 false→true만 바꿀 수 있다.
+이미지 갱신이 한쪽만 끝난 경우 새 plan으로 나머지만 완성하거나, 별도 승인한 이전 digest로 되돌릴 수 있다.
+두 경우 모두 기존/목표 두 TD의 ACTIVE·이미지·ARN을 검증하고, replacement인 슬롯만 revision 증가를 허용한다.
+no-op 슬롯의 ARN/revision은 그대로여야 한다. 기존 plan/hash를 재사용하거나 자동 apply하지 않는다.

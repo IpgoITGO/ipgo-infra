@@ -24,7 +24,8 @@ def revisions(plan, account):
     return result
 
 
-def verify(ecs, old, *, outputs=None, refresh=False, image_uri=None):
+def verify(ecs, old, *, outputs=None, refresh=False, image_uri=None, replaced=None):
+    replaced = set(old) if replaced is None and refresh else (replaced or set())
     observed={}
     for name,target in old.items():
         td=ecs.describe_task_definition(taskDefinition=target['arn'])['taskDefinition']
@@ -36,7 +37,7 @@ def verify(ecs, old, *, outputs=None, refresh=False, image_uri=None):
             arn=cfg['task_definition_arn']
             prefix=target['arn'].rsplit(':',1)[0]+':'
             require(arn.startswith(prefix) and re.fullmatch('[1-9][0-9]*',arn[len(prefix):]), 'NEW_TASK_ARN')
-            require((int(arn[len(prefix):]) > int(target['arn'].rsplit(':',1)[1])) if refresh else arn==target['arn'], 'REVISION_TRANSITION')
+            require((int(arn[len(prefix):]) > int(target['arn'].rsplit(':',1)[1])) if name in replaced else arn==target['arn'], 'REVISION_TRANSITION')
             current=ecs.describe_task_definition(taskDefinition=arn)['taskDefinition']
             require(current['taskDefinitionArn']==arn and current['status']=='ACTIVE'
                     and len(current['containerDefinitions'])==1
@@ -68,7 +69,9 @@ def main():
     outputs=json.loads((root/'d0-outputs.json').read_text()) if phase=='after' else None
     sdk=Config(retries={'total_max_attempts':1},connect_timeout=5,read_timeout=20)
     observed=verify(boto3.client('ecs',region_name='ap-northeast-2',config=sdk),old,
-                    outputs=outputs,refresh=refresh,image_uri=cfg['configuration']['image_uri'])
+                    outputs=outputs,refresh=refresh,image_uri=cfg['configuration']['image_uri'],
+                    replaced={e['address'].rsplit('.',1)[1] for e in plan['resource_changes']
+                              if e['change']['actions']==['create','delete']})
     context={'workflowSha':os.environ['GITHUB_SHA'],'runId':os.environ['GITHUB_RUN_ID'],
              'phase':phase,**review_result,'iamSnapshotSha256':snapshot['iamSnapshotSha256']}
     key=serialization.load_pem_public_key(PUBLIC_KEY.read_bytes())

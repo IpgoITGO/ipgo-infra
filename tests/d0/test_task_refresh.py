@@ -46,6 +46,26 @@ class TaskRefreshTest(unittest.TestCase):
         p['resource_changes'][0]['change']['after']['cpu']='512'
         with self.assertRaises(ValueError):review(p,protect=True,image_uri=IMAGE+'a'*64)
 
+    def test_partial_refresh_or_protection_has_one_verified_noop(self):
+        p=plan();noop=p['resource_changes'][0]['change']
+        noop['before']['container_definitions']=noop['before']['container_definitions'].replace('a'*64,'b'*64)
+        noop.update(actions=['no-op'],after=copy.deepcopy(noop['before']),after_unknown={})
+        self.assertEqual(1,self.check(p)['count'])
+        noop['after']['execution_role_arn']='changed'
+        with self.assertRaises(ValueError):self.check(p)
+        p=plan()
+        for item in p['resource_changes']:
+            c=item['change'];c['after']=copy.deepcopy(c['before']);c['after_unknown']={}
+            c['actions']=['no-op']
+        p['resource_changes'][1]['change']['before']['skip_destroy']=False
+        p['resource_changes'][1]['change']['actions']=['update']
+        self.assertEqual(1,review(p,protect=True,image_uri=IMAGE+'a'*64)['count'])
+        p['resource_changes'][1]['change'].update(before=copy.deepcopy(p['resource_changes'][1]['change']['after']),actions=['no-op'])
+        self.assertEqual(0,review(p,protect=True,image_uri=IMAGE+'a'*64)['count'])
+        p['resource_changes'][0]['change']['before']['skip_destroy']=False
+        p['resource_changes'][0]['change']['after']['skip_destroy']=False
+        with self.assertRaises(ValueError):review(p,protect=True,image_uri=IMAGE+'a'*64)
+
     def test_other_attributes_unknown_unsafe_order_or_only_one_task_are_denied(self):
         for mutate in [
             lambda p:p['resource_changes'].pop(),
