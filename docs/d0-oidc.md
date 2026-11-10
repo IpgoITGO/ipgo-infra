@@ -2,7 +2,7 @@
 
 관련 IPGO-174 / Issue #42, Server IPGO-173 / Issue #153.
 이 문서는 비활성 구현을 설명한다. IAM·DB 적용, ECR 게시, GitHub 설정과 D0 실행은 각각 실제 승인 후에 한다.
-기존 조회 역할·기존 dev root와 Client 6c515b9·Server TD31·AI TD17은 변경하지 않는다.
+기존 조회 역할·기존 dev root와 Client 6c515b9·Server TD32·AI TD19은 변경하지 않는다.
 
 ## 구성과 허용 범위
 
@@ -166,3 +166,50 @@ inline/attached/boundary·새 이름 부재를 실제 확인하고 HDD에 백업
 전체 bootstrap apply/import나 기존 IAM 정책 재정렬은 이 작업에서 수행하지 않는다.
 향후 bootstrap 상태를 관리할 때는 이 외부 선행 정책의 존재·내용·소유 방식을 먼저 대조하고 승인한 계획에서 보존하거나 명시적으로 인계한다.
 관리자 API 적용 전후 결과와 원본 snapshot은 비공개 운영 기록에 남기고 공개 PR에는 내부 계정·정책 원문을 올리지 않는다.
+
+## B1-2 선행 보완: TD32·TD19와 두 단계 TD 보호
+
+현재 helper는 Client `6c515b9`·Server TD32·AI TD19만 서명/실제 서비스 검사에서 허용한다.
+기존 TD31·TD17용 서명·IAM 지문을 재사용하지 않는다. 소스 병합은 배포나 DB 설치가 아니다.
+
+기존 TD의 state가 `skip_destroy=false`이면 이미지와 보존 옵션을 한 plan으로 바꾸지 않는다.
+AWS provider 6.72.0의 삭제 경로는 **제거되는 이전 state의 skip_destroy**를 확인한다.
+따라서 다음을 각각 실제 plan 검토와 별도 apply 승인으로 나눈다.
+
+1. `protect_tasks=true`, `refresh_tasks=false`, `revoke_runtime=false`, `runtime_enabled=false`.
+   `PLAN_D0_TASK_PROTECT` / `APPLY_D0_TASK_PROTECT`와 정확 SHA·plan/IAM 지문을 사용한다.
+   현재 이미지 그대로, 정확 install/runtime 두 TD의 `skip_destroy` false→true update만 허용한다.
+   ARN/revision/컨테이너/권한 등 다른 값·unknown·drift가 있으면 중단한다. 이 단계는 새 이미지가 필요 없다.
+   성공 후 보호된 state의 값과 기존 두 revision ACTIVE를 확인한다. 실패 시 state를 확인하고 다음 단계는 금지한다.
+   이미 true인 경우 이 모드를 반복하지 않고 현재 state/실제 revision을 읽어 다음 plan을 검토한다.
+2. `refresh_tasks=true`, `protect_tasks=false`와 `PLAN_D0_TASK_REFRESH` / `APPLY_D0_TASK_REFRESH`.
+   두 TD의 **before/after 모두 skip_destroy=true**, create-before-destroy 순서, 동일 repository의 새 immutable
+   image digest만 허용한다. CPU·메모리·role·Secret reference·command·network·logs·tags 등은 같아야 한다.
+   두 TD 외 변경·runtime 역할 활성화·기존 조회 역할 변경은 거부한다. `skip_destroy`로 기존 revision을
+   deregister하지 않으며 새 service/RunTask는 없다. old/new ARN·digest·ACTIVE를 실제 조회하고 보존한다.
+3. 부분 실패 시 D0/DB 설치를 중단하고 보호된 state와 실제 두 family를 대조한다. state를 강제 복원하거나
+   자동 destroy하지 않는다. 필요하면 **두 TD 모두** 검토한 이전 digest로 재등록하는 새 plan을 같은 제한으로
+   승인받는다. 기존 ACTIVE revision과 설정 메타는 복구 근거로 보존하며 state 밖 ARN만 임의 교체하지 않는다.
+   이전 helper는 TD31·17 검사일 수 있으므로 그 이미지로 설치/D0를 실행하지 않는다.
+
+Terraform mock은 provider의 ForceNew planning을 재현하지 않아 image 변경을 update로 표시할 수 있다.
+이 mock plan을 실제 replacement 승인 근거로 사용하지 않는다. guard의 replacement/unknown/보존 거부 회귀와
+모듈 검사를 구분하며, 실제 AWS plan·등록·이전 revision 보존은 후속 승인 후 검증한다.
+근거: [provider 6.72.0 구현](https://github.com/hashicorp/terraform-provider-aws/blob/v6.72.0/internal/service/ecs/task_definition.go).
+
+DB 설치/로그·receipt 관측이 실패하면 성공/자동 NOLOGIN으로 간주하지 않는다.
+새 helper의 고정 install TD를 사용하는 **별도 승인된** `operation=deactivate`, `confirmation=DEACTIVATE_D0`와
+동일 설치 operationId·현재 KST 날짜·`kind=deactivate`로 새로 서명한 봉투가 복구 경로다.
+D0_INSTALL_ENABLED/environment/정확 SHA/helper/IAM snapshot/서명/고정 network 검사는 그대로이며,
+복구 시 Client HTTP 및 서비스 건강 검사는 생략해 앱 장애 중에도 신규 DB 로그인 차단을 막지 않는다.
+기존 install 봉투를 그대로 재사용하지 않는다. master 주입·task role·Secret 정책을 확대하지 않는다.
+`ipgo_d0_bootstrap`의 설치 operation marker가 정확히 일치할 때만 NOLOGIN을 commit하고,
+그 role 세션만 종료·0건 및 NOLOGIN을 확인한다. 세션 종료 권한은 설치 전 실제 DB 관리자에게 확인한다.
+실패/응답 유실은 미확인으로 남기며 기존 계정 세션/비밀번호·업무 데이터·Secret을 삭제/회전하지 않는다.
+RunTask 응답이 없으면 REQUESTED/clientToken·operation/tag를 조회해 기존 task를 확정/중단한 뒤 복구를 승인한다.
+
+TD 보호/갱신 apply에는 기존 두 ARN·이미지·ACTIVE 사전 조회와 암호화 근거 보존을 추가했다.
+사전 조회나 근거 업로드 실패는 apply 전에 중단한다. 성공 후 output의 새 ARN·이미지와 이전 revision의
+ACTIVE를 다시 조회해 별도 암호화 근거를 남긴다. 이 사후 검증/업로드가 실패해도 적용 자체가 자동 취소된 것은
+아니므로 DB 설치/D0를 중단하고 실제 state/두 family를 확인한다. 부분 apply 실패는 자동 재실행/일괄 롤백하지 않는다.
+이 경로에서 ECS API는 DescribeTaskDefinition뿐이며 IAM 정책·서비스·RunTask를 변경하지 않는다.

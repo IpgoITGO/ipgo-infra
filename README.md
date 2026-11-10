@@ -1,6 +1,6 @@
 # Ipgo Infra
 
-D0 전용 OIDC의 기본 비활성 구성·실제 적용·검증·복구 경계는 [D0 운영](docs/d0-oidc.md)을 따릅니다. IAM 사전 조회·암호화 스냅샷은 `preflight` 읽기 모드로 확인하고, apply/install에는 검토한 IAM fingerprint도 필요합니다. B1-R 선행 읽기 정책은 [관리 명세](docs/d0-oidc.md#b1-r-선행-읽기-정책-관리-명세)를 따릅니다. IAM·DB 적용과 D0 실행은 별도 승인입니다.
+D0 전용 OIDC의 기본 비활성 구성·실제 적용·검증·복구 경계는 [D0 운영](docs/d0-oidc.md)을 따릅니다. IAM 사전 조회·암호화 스냅샷은 `preflight` 읽기 모드로 확인하고, apply/install에는 검토한 IAM fingerprint도 필요합니다. B1-R 선행 읽기 정책은 [관리 명세](docs/d0-oidc.md#b1-r-선행-읽기-정책-관리-명세)를 따릅니다. TD32·TD19 고정 검사, 기존 D0 TD의 보존 옵션 선반영 후 이미지 전용 갱신 및 서명된 로그인 차단 경로도 같은 문서를 따릅니다. IAM·DB 적용과 D0 실행은 별도 승인입니다.
 
 개발 서버의 단일 호스트 전환·비용·장애 알림·복구 절차는 [운영 문서](docs/onebox.md)를 참고합니다.
 

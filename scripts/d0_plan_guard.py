@@ -1,4 +1,4 @@
-"""D0 독립 state의 새 리소스만 검토. plan 값/내부 ARN은 출력하지 않는다."""
+"""D0 독립 state의 초기 생성·정확 TD 보호/갱신만 검토. plan 값/내부 ARN은 출력하지 않는다."""
 import hashlib
 import json
 import os
@@ -37,13 +37,17 @@ def validate_job(env):
     operation = env.get('OPERATION')
     require(operation in ('preflight','plan','apply'), 'OPERATION')
     revoke = env.get('REVOKE_RUNTIME') == 'true'
-    expected_confirmation = operation.upper() + ('_D0_REVOKE' if revoke else '_D0')
+    refresh = env.get('REFRESH_TASKS') == 'true'
+    protect = env.get('PROTECT_TASKS') == 'true'
+    require(sum((revoke, refresh, protect)) <= 1, 'CONFLICTING_MODES')
+    expected_confirmation = operation.upper() + ('_D0_TASK_PROTECT' if protect else '_D0_TASK_REFRESH' if refresh else '_D0_REVOKE' if revoke else '_D0')
     require(env.get('CONFIRMATION') == expected_confirmation, 'CONFIRMATION')
     cfg = json.loads(env.get('D0_TERRAFORM_JSON','{}'))
     require(set(cfg) == {'enabled','runtime_enabled','configuration'} and cfg['enabled'] is True
             and type(cfg['runtime_enabled']) is bool and set(cfg['configuration']) == CONFIG,
             'CONFIGURATION_FIELDS')
     require(not revoke or cfg['runtime_enabled'] is False, 'REVOKE_RUNTIME_CONFIG')
+    require(not (refresh or protect) or cfg['runtime_enabled'] is False, 'REFRESH_RUNTIME_MUST_STAY_DISABLED')
     require(cfg['configuration']['account_id'] == env.get('AWS_ACCOUNT_ID')
             and re.fullmatch('[0-9]{12}', env.get('AWS_ACCOUNT_ID','')), 'ACCOUNT_ID')
     require(re.fullmatch('[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]',env.get('TF_STATE_BUCKET','')), 'STATE_BUCKET')
@@ -53,9 +57,57 @@ def validate_job(env):
     return cfg
 
 
-def review(plan, *, revoke=False):
+TASKS = {'aws_ecs_task_definition.install', 'aws_ecs_task_definition.runtime'}
+COMPUTED = {'id', 'arn', 'arn_without_revision', 'revision'}
+
+
+def review_task_refresh(entry, family):
+    change = entry['change']
+    before, after = change.get('before'), change.get('after')
+    require(isinstance(before, dict) and isinstance(after, dict), 'TASK_VALUES_REQUIRED')
+    require(before.get('family') == after.get('family') == family, 'TASK_FAMILY_CHANGED')
+    require(not entry.get('previous_address') and not entry.get('deposed'), 'TASK_STATE_MOVE')
+    require(before.get('skip_destroy') is True and after.get('skip_destroy') is True, 'OLD_REVISION_MUST_BE_PRESERVED')
+    unknown = change.get('after_unknown', {})
+    require(not any(v for k,v in unknown.items() if k not in COMPUTED), 'UNKNOWN_TASK_ATTRIBUTES')
+    ignored = COMPUTED | {'container_definitions', 'skip_destroy'}
+    require({k:v for k,v in before.items() if k not in ignored} ==
+            {k:v for k,v in after.items() if k not in ignored}, 'TASK_ATTRIBUTE_CHANGED')
+    old = json.loads(before['container_definitions'])
+    new = json.loads(after['container_definitions'])
+    require(len(old) == len(new) == 1 and old[0].get('name') == new[0].get('name') == 'runner', 'TASK_CONTAINER_BOUNDARY')
+    old_image, new_image = old[0].pop('image'), new[0].pop('image')
+    require(old == new, 'TASK_CONTAINER_ATTRIBUTE_CHANGED')
+    pattern = r'([0-9]{12}[.]dkr[.]ecr[.]ap-northeast-2[.]amazonaws[.]com/ipgo-dev/database)@sha256:[a-f0-9]{64}'
+    a, b = re.fullmatch(pattern, old_image), re.fullmatch(pattern, new_image)
+    require(a and b and a[1] == b[1] and old_image != new_image, 'IMMUTABLE_SAME_REPOSITORY_IMAGE_REQUIRED')
+    return new_image
+
+
+def review_task_protect(entry, family):
+    change = entry['change']
+    before, after = change.get('before'), change.get('after')
+    require(isinstance(before, dict) and isinstance(after, dict), 'TASK_VALUES_REQUIRED')
+    require(before.get('family') == after.get('family') == family, 'TASK_FAMILY_CHANGED')
+    require(before.get('skip_destroy') is False and after.get('skip_destroy') is True, 'PROTECT_FALSE_TO_TRUE_ONLY')
+    require(not entry.get('previous_address') and not entry.get('deposed'), 'TASK_STATE_MOVE')
+    require(not any(change.get('after_unknown', {}).values()), 'UNKNOWN_TASK_ATTRIBUTES')
+    require({k:v for k,v in before.items() if k != 'skip_destroy'} ==
+            {k:v for k,v in after.items() if k != 'skip_destroy'}, 'PROTECT_ATTRIBUTE_CHANGED')
+    containers = json.loads(after['container_definitions'])
+    require(len(containers) == 1 and containers[0].get('name') == 'runner', 'TASK_CONTAINER_BOUNDARY')
+    return containers[0]['image']
+
+
+def review(plan, *, revoke=False, refresh=False, protect=False, image_uri=None):
+    require(sum((revoke, refresh, protect)) <= 1, 'CONFLICTING_MODES')
     summary = []
+    images = []
+    if refresh or protect:
+        require(not any(x.get('change', {}).get('actions') != ['no-op'] for x in plan.get('resource_drift', [])), 'REFRESH_DRIFT')
     for entry in plan.get('resource_changes',[]):
+        require(not entry.get('previous_address') and not entry.get('deposed')
+                and not entry['change'].get('importing'), 'STATE_MOVE_OR_IMPORT')
         if entry['change']['actions'] == ['no-op']:
             continue
         address = entry['address']
@@ -66,15 +118,25 @@ def review(plan, *, revoke=False):
         kind, field, expected = RESOURCES[key]
         require(entry.get('type') == kind and not entry['change'].get('importing'), 'RESOURCE_TYPE_OR_IMPORT')
         actions = entry['change']['actions']
-        if actions == ['delete']:
+        if protect:
+            require(key in TASKS and actions == ['update'], 'TASK_PROTECT_SCOPE')
+            images.append(review_task_protect(entry, expected))
+        elif refresh:
+            require(key in TASKS and actions == ['create', 'delete'], 'TASK_REFRESH_SCOPE')
+            images.append(review_task_refresh(entry, expected))
+        elif actions == ['delete']:
             require(revoke and key in REVOKE, 'DELETE_NOT_APPROVED')
         else:
             require(actions == ['create'] and entry['change'].get('before') is None, 'UPDATE_OR_REPLACE_NOT_APPROVED')
             after = entry['change'].get('after') or {}
             require(field is None or after.get(field) == expected, 'PHYSICAL_NAME_CHANGED')
         summary.append({'address':address,'actions':actions})
+    if refresh or protect:
+        require({x['address'].split('module.d0[0].',1)[1] for x in summary} == TASKS
+                and len(summary) == 2, 'EXACT_TWO_TASKS_REQUIRED')
+        require(len(set(images)) == 1 and images[0] == image_uri, 'REFRESH_IMAGE_CONFIGURATION')
     # 외부 API·현재 시각 등 비결정적 외곽 필드는 제외. 값은 출력하지 않지만 승인 digest에는 포함.
-    material = {'variables':plan.get('variables',{}),'resource_changes':plan.get('resource_changes',[])}
+    material = {'mode': 'task-protect' if protect else 'task-refresh' if refresh else 'revoke' if revoke else 'create', 'variables':plan.get('variables',{}),'resource_changes':plan.get('resource_changes',[])}
     digest = hashlib.sha256(json.dumps(material,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return {'planSha256':digest,'changes':summary,'count':len(summary)}
 
@@ -94,7 +156,10 @@ if __name__ == '__main__':
             validate_snapshot(snapshot, os.environ, config)
             plan = json.loads(Path(sys.argv[2]).read_text())
             check_plan(snapshot, plan)
-            result = review(plan,revoke=os.environ.get('REVOKE_RUNTIME')=='true')
+            result = review(plan,revoke=os.environ.get('REVOKE_RUNTIME')=='true',
+                            refresh=os.environ.get('REFRESH_TASKS')=='true',
+                            protect=os.environ.get('PROTECT_TASKS')=='true',
+                            image_uri=config['configuration']['image_uri'])
             if os.environ.get('OPERATION') == 'apply':
                 require(result['planSha256'] == os.environ.get('EXPECTED_PLAN_SHA256'), 'PLAN_CHANGED')
             print(json.dumps(result,sort_keys=True))

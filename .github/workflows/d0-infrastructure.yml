@@ -10,9 +10,9 @@ on:
         type: choice
         required: true
         default: plan
-        options: [preflight, plan, apply, publish, install]
+        options: [preflight, plan, apply, publish, install, deactivate]
       confirmation:
-        description: "PLAN_D0/APPLY_D0, *_REVOKE, PUBLISH_D0_IMAGE or INSTALL_D0"
+        description: "PLAN_D0/APPLY_D0, *_TASK_PROTECT/*_TASK_REFRESH, *_REVOKE, PUBLISH_D0_IMAGE, INSTALL_D0 or DEACTIVATE_D0"
         required: true
         type: string
       expected_plan_sha256:
@@ -23,6 +23,14 @@ on:
         description: "Reviewed IAM fingerprint (apply/install only)"
         default: ""
         type: string
+      protect_tasks:
+        description: "First persist skip_destroy on both existing D0 revisions; no image change"
+        default: false
+        type: boolean
+      refresh_tasks:
+        description: "Only two D0 task images; preserve previous revisions, runtime stays disabled"
+        default: false
+        type: boolean
       revoke_runtime:
         description: "Revoke only the new runtime OIDC role/policy; preserve data"
         default: false
@@ -124,6 +132,8 @@ jobs:
       EXPECTED_IAM_SNAPSHOT_SHA256: ${{ inputs.expected_iam_snapshot_sha256 }}
       AWS_APPLY_ROLE_ARN: ${{ vars.AWS_APPLY_ROLE_ARN }}
       REVOKE_RUNTIME: ${{ inputs.revoke_runtime }}
+      REFRESH_TASKS: ${{ inputs.refresh_tasks }}
+      PROTECT_TASKS: ${{ inputs.protect_tasks }}
       D0_INFRA_ENABLED: ${{ vars.D0_INFRA_ENABLED }}
       D0_TERRAFORM_JSON: ${{ secrets.D0_TERRAFORM_JSON }}
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
@@ -200,7 +210,18 @@ jobs:
           name: d0-encrypted-plan-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-plan-envelope.json
           if-no-files-found: error
+      - name: Verify previous D0 revisions before any task update
+        if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
+        run: '"$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_verify_tasks.py before'
+      - name: Preserve encrypted previous revision evidence
+        if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-task-revisions-before-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-task-revisions-before-envelope.json
+          if-no-files-found: error
       - name: Apply only the reviewed plan
+        id: apply
         if: success() && inputs.operation == 'apply'
         run: |
           if ! terraform -chdir=terraform/environments/d0-validation apply \
@@ -209,9 +230,22 @@ jobs:
             exit 1
           fi
           echo 'D0 isolated resources applied. DB installation and D0 data execution remain separate.'
+      - name: Verify old and new D0 revisions after apply
+        if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
+        run: |
+          umask 077
+          terraform -chdir=terraform/environments/d0-validation output -json > "$RUNNER_TEMP/d0-outputs.json"
+          "$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_verify_tasks.py after
+      - name: Preserve encrypted revision verification
+        if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d0-task-revisions-after-${{ github.run_id }}
+          path: ${{ runner.temp }}/d0-task-revisions-after-envelope.json
+          if-no-files-found: error
   install:
     if: >-
-      github.ref == 'refs/heads/dev' && inputs.operation == 'install' &&
+      github.ref == 'refs/heads/dev' && (inputs.operation == 'install' || inputs.operation == 'deactivate') &&
       vars.D0_INSTALL_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -225,7 +259,7 @@ jobs:
       HELPER_SHA: ${{ inputs.helper_sha }}
       CONFIRMATION: ${{ inputs.confirmation }}
       D0_INSTALL_ENABLED: ${{ vars.D0_INSTALL_ENABLED }}
-      OPERATION: install
+      OPERATION: ${{ inputs.operation }}
       D0_TERRAFORM_JSON: ${{ secrets.D0_TERRAFORM_JSON }}
       EXPECTED_IAM_SNAPSHOT_SHA256: ${{ inputs.expected_iam_snapshot_sha256 }}
       AWS_APPLY_ROLE_ARN: ${{ vars.AWS_APPLY_ROLE_ARN }}
@@ -241,7 +275,11 @@ jobs:
         run: |
           [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]]
           [[ "$HELPER_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_RUN_ATTEMPT" == '1' ]]
-          [[ "$CONFIRMATION" == 'INSTALL_D0' ]]
+          if [[ "$OPERATION" == 'deactivate' ]]; then
+            [[ "$CONFIRMATION" == 'DEACTIVATE_D0' ]]
+          else
+            [[ "$OPERATION" == 'install' && "$CONFIRMATION" == 'INSTALL_D0' ]]
+          fi
           [[ "$EXPECTED_IAM_SNAPSHOT_SHA256" =~ ^[a-f0-9]{64}$ ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
