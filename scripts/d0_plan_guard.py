@@ -84,6 +84,19 @@ def review_task_refresh(entry, family):
     return new_image
 
 
+def review_task_unchanged(entry, family):
+    change = entry['change']
+    before, after = change.get('before'), change.get('after')
+    require(isinstance(before,dict) and before == after, 'NOOP_TASK_CHANGED')
+    require(before.get('family') == family and before.get('skip_destroy') is True, 'NOOP_TASK_NOT_PROTECTED')
+    require(not any(change.get('after_unknown',{}).values()), 'UNKNOWN_TASK_ATTRIBUTES')
+    containers=json.loads(before['container_definitions'])
+    require(len(containers)==1 and containers[0].get('name')=='runner', 'TASK_CONTAINER_BOUNDARY')
+    image=containers[0]['image']
+    require(re.fullmatch(r'[0-9]{12}[.]dkr[.]ecr[.]ap-northeast-2[.]amazonaws[.]com/ipgo-dev/database@sha256:[a-f0-9]{64}',image), 'IMAGE_DIGEST')
+    return image
+
+
 def review_task_protect(entry, family):
     change = entry['change']
     before, after = change.get('before'), change.get('after')
@@ -103,14 +116,23 @@ def review(plan, *, revoke=False, refresh=False, protect=False, image_uri=None):
     require(sum((revoke, refresh, protect)) <= 1, 'CONFLICTING_MODES')
     summary = []
     images = []
+    seen_tasks = set()
     if refresh or protect:
         require(not any(x.get('change', {}).get('actions') != ['no-op'] for x in plan.get('resource_drift', [])), 'REFRESH_DRIFT')
     for entry in plan.get('resource_changes',[]):
         require(not entry.get('previous_address') and not entry.get('deposed')
                 and not entry['change'].get('importing'), 'STATE_MOVE_OR_IMPORT')
+        address = entry['address']
+        task_key = address.removeprefix('module.d0[0].')
+        if (refresh or protect) and address.startswith('module.d0[0].') and task_key in TASKS:
+            require(task_key not in seen_tasks, 'DUPLICATE_TASK')
+            seen_tasks.add(task_key)
+            if entry['change']['actions'] == ['no-op']:
+                require(entry.get('type') == 'aws_ecs_task_definition', 'RESOURCE_TYPE_OR_IMPORT')
+                images.append(review_task_unchanged(entry, RESOURCES[task_key][2]))
+                continue
         if entry['change']['actions'] == ['no-op']:
             continue
-        address = entry['address']
         prefix = 'module.d0[0].'
         require(address.startswith(prefix), 'OUTSIDE_D0_STATE_SCOPE')
         key = address[len(prefix):]
@@ -132,8 +154,7 @@ def review(plan, *, revoke=False, refresh=False, protect=False, image_uri=None):
             require(field is None or after.get(field) == expected, 'PHYSICAL_NAME_CHANGED')
         summary.append({'address':address,'actions':actions})
     if refresh or protect:
-        require({x['address'].split('module.d0[0].',1)[1] for x in summary} == TASKS
-                and len(summary) == 2, 'EXACT_TWO_TASKS_REQUIRED')
+        require(seen_tasks == TASKS and len(summary) <= 2, 'EXACT_TWO_TASKS_REQUIRED')
         require(len(set(images)) == 1 and images[0] == image_uri, 'REFRESH_IMAGE_CONFIGURATION')
     # 외부 API·현재 시각 등 비결정적 외곽 필드는 제외. 값은 출력하지 않지만 승인 digest에는 포함.
     material = {'mode': 'task-protect' if protect else 'task-refresh' if refresh else 'revoke' if revoke else 'create', 'variables':plan.get('variables',{}),'resource_changes':plan.get('resource_changes',[])}

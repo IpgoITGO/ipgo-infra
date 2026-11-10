@@ -49,3 +49,11 @@ class VerifyTasksTest(unittest.TestCase):
             if mutation=='image':o['installation']['value']['image_uri']=IMAGE+'c'*64
             if mutation=='same-revision':o['installation']['value']['task_definition_arn']=previous['install']['arn']
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):verify(ecs,previous,outputs=o,refresh=True,image_uri=IMAGE+'b'*64)
+
+    def test_partial_refresh_only_replaces_changed_slot_and_verifies_other_active(self):
+        previous=old();previous['runtime']['image']=IMAGE+'b'*64
+        ecs=Ecs(previous,IMAGE+'b'*64);o=outputs(previous)
+        o['runtime']['value']['task_definition_arn']=previous['runtime']['arn']
+        verify(ecs,previous,outputs=o,refresh=True,image_uri=IMAGE+'b'*64,replaced={'install'})
+        o['runtime']['value']['task_definition_arn']=o['runtime']['value']['task_definition_arn'].rsplit(':',1)[0]+':2'
+        with self.assertRaises(ValueError):verify(ecs,previous,outputs=o,refresh=True,image_uri=IMAGE+'b'*64,replaced={'install'})
