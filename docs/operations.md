@@ -270,3 +270,9 @@ Spring은 공유 session 저장소가 아직 없으므로 dev task 수를 1로 �
 ## D0 전용 OIDC
 
 새 독립 state와 역할의 단계별 적용·실패 중단·runtime 권한 회수는 [D0 운영](d0-oidc.md)을 따른다. 기존 조회 역할과 서비스 TD는 변경하지 않는다.
+
+## 배포 증거 인계와 시간 기록
+
+[배포 증거 도구](../scripts/deployment/README.md)로 정확한 CI/run·독립 runtime·앱 헬스를 대조하고, 검증한 Server snapshot을 AI에 인계합니다.
+독립 읽기만 묶고 서비스 교체·환경 승인 순서는 유지합니다. 준비·DB·세 앱·최종 기록을 모두 측정하며 CI 합계를 전체 배포 시간으로 부르지 않습니다.
+도구와 합성 CI job은 배포·환경 승인·Terraform apply·DB 변경을 실행하지 않습니다. 실제 증거·인증정보는 저장소 밖 보호 경로에 둡니다.

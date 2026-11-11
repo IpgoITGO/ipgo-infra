@@ -84,3 +84,8 @@ bootstrap의 Server/AI GitHub 배포 역할에 `ecs:ListTasks`와 `ecs:DescribeT
 역할 policy 제거/복구 시 task 검증은 조회 단계에서 실패할 수 있으므로 앱 workflow 적용 순서와
 함께 검토합니다. 로컬 검증은 backend 없는 init과 validate/fmt이며 실제 IAM 허용 결과를
 검증한 것은 아닙니다.
+
+## 배포 증거 인계와 시간 기록
+
+[읽기 수집·검증·시간 보고 도구](scripts/deployment/README.md)는 실제 배포 없이 로컬 JSON과 로그를 대조합니다.
+기존 승인·정확 SHA·환경·앱 헬스·복구 검사를 유지하며, 새 배포나 단축 실측을 자동 실행하지 않습니다.
