@@ -89,3 +89,9 @@ bootstrap의 Server/AI GitHub 배포 역할에 `ecs:ListTasks`와 `ecs:DescribeT
 
 [읽기 수집·검증·시간 보고 도구](scripts/deployment/README.md)는 실제 배포 없이 로컬 JSON과 로그를 대조합니다.
 기존 승인·정확 SHA·환경·앱 헬스·복구 검사를 유지하며, 새 배포나 단축 실측을 자동 실행하지 않습니다.
+
+## 토스 테스트 결제 준비 (Server #170)
+
+개발 환경은 `/ipgo/dev/server-billing-test` Secret 컨테이너와 서버 execution role의 해당 ARN 읽기만 추가합니다. 값은 Terraform/state/plan에 넣지 않습니다. API 개별 연동용 테스트 키·상점 MID·웹훅 보안키와 서버에서 생성한 별도 암호화/lookup 키를 비공개 경로로 주입한 뒤, 승인된 Server 배포에서만 TEST API/worker를 켭니다. 이 인프라 변경만으로 앱 결제 기능이 활성화되지는 않습니다. 기존 Secret·DB·AI 역할 권한은 유지하며 LIVE/부분 환불은 범위 밖입니다.
+
+결제 범위 적용은 `billing_test_only=true`로 Secret 컨테이너와 server execution read policy 두 주소만 대상으로 계획·검증합니다. 전체 plan에 AI/DB 역할 drift가 나타나도 이 작업에 포함하지 않습니다. plan guard는 다른 주소 변경·삭제·교체를 거부합니다. 새 ARN으로 policy가 apply 후 계산되는 경우 값 전체는 plan만으로 확정할 수 없으므로 적용 직후 실제 정책의 기존 리소스 보존/새 Secret 한 개 추가를 재조회합니다.

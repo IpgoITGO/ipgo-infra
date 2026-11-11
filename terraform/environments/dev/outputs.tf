@@ -87,3 +87,8 @@ output "database_migrate_task_definition_family" {
 output "database_verify_task_definition_family" {
   value = module.compute.database_verify_task_definition_family
 }
+
+output "server_billing_test_secret_arn" {
+  description = "TEST billing secret container; no secret value is managed by Terraform."
+  value       = aws_secretsmanager_secret.server_billing_test.arn
+}
