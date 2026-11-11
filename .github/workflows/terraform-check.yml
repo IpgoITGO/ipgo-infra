@@ -60,3 +60,10 @@ jobs:
       - run: .venv-rds/bin/python tests/rds_offhours/verify_aws_contract.py
       - run: docker pull postgres:16-alpine
       - run: .venv-rds/bin/python tests/rds_offhours/verify_postgres_tls.py
+
+  deployment-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Test offline deployment evidence and timing guards
+        run: python3 -m unittest discover -s scripts/deployment -p "test_*.py" -v
