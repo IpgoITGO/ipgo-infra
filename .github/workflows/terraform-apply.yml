@@ -11,6 +11,10 @@ on:
         description: "Review a plan using the protected dev deployment role without applying it"
         type: boolean
         default: false
+      billing_test_only:
+        description: "Allow only the dedicated TEST billing Secret and server read policy"
+        type: boolean
+        default: false
       https_listener_only:
         description: "Reject changes other than HTTPS creation and an in-place HTTP redirect"
         type: boolean
@@ -118,11 +122,18 @@ jobs:
           terraform -chdir=terraform/environments/dev init -backend-config=backend.hcl -input=false
           terraform -chdir=terraform/environments/dev validate
       - name: Create approved plan
+        env:
+          BILLING_TEST_ONLY: ${{ inputs.billing_test_only }}
         shell: bash
         run: |
+          targets=()
+          if [ "$BILLING_TEST_ONLY" = true ]; then
+            targets=(-target=aws_secretsmanager_secret.server_billing_test '-target=module.identity.aws_iam_role_policy.server_secrets[0]')
+          fi
           set +e
           terraform -chdir=terraform/environments/dev plan \
             -input=false \
+            "${targets[@]}" \
             -out=dev.tfplan \
             > "$RUNNER_TEMP/terraform-plan.log" 2>&1
           status=$?
@@ -135,6 +146,7 @@ jobs:
         env:
           HTTPS_LISTENER_ONLY: ${{ inputs.https_listener_only }}
           MONITORING_ONLY: ${{ inputs.monitoring_only }}
+          BILLING_TEST_ONLY: ${{ inputs.billing_test_only }}
         shell: bash
         run: |
           terraform -chdir=terraform/environments/dev show -json dev.tfplan \
@@ -144,6 +156,9 @@ jobs:
                   select($before[.] != $after[.])] as $keys |
                 [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
             | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$BILLING_TEST_ONLY" = true ]; then
+            terraform -chdir=terraform/environments/dev show -json dev.tfplan | python3 scripts/check-billing-test-plan.py
+          fi
           if [ "$MONITORING_ONLY" = true ]; then
             terraform -chdir=terraform/environments/dev show -json dev.tfplan \
               | python3 scripts/check-monitoring-plan.py

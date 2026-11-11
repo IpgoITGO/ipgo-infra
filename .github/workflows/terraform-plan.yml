@@ -7,6 +7,11 @@ on:
       - ".github/workflows/terraform-*.yml"
       - "terraform/**"
   workflow_dispatch:
+    inputs:
+      billing_test_only:
+        description: "Plan only the dedicated TEST billing Secret and server execution read policy"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -124,14 +129,21 @@ jobs:
         run: terraform -chdir=terraform/environments/dev validate
       - name: Plan without publishing sensitive details
         id: plan
+        env:
+          BILLING_TEST_ONLY: ${{ inputs.billing_test_only }}
         shell: bash
         run: |
+          targets=()
+          if [ "$BILLING_TEST_ONLY" = true ]; then
+            targets=(-target=aws_secretsmanager_secret.server_billing_test '-target=module.identity.aws_iam_role_policy.server_secrets[0]')
+          fi
           set +e
           terraform -chdir=terraform/environments/dev plan \
             -input=false \
             -lock=false \
             -no-color \
             -detailed-exitcode \
+            "${targets[@]}" \
             -out=dev.tfplan \
             > "$RUNNER_TEMP/terraform-plan.log" 2>&1
           status=$?
@@ -153,6 +165,7 @@ jobs:
           fi
       - name: Summarize plan
         env:
+          BILLING_TEST_ONLY: ${{ inputs.billing_test_only }}
           CHANGED: ${{ steps.plan.outputs.changed }}
         run: |
           terraform -chdir=terraform/environments/dev show -json dev.tfplan \
@@ -170,3 +183,7 @@ jobs:
                   select($before[.] != $after[.])] as $keys |
                 [.address, (.change.actions | join(",")), ($keys | join(","))] | @tsv' \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if [ "$BILLING_TEST_ONLY" = true ]; then
+            terraform -chdir=terraform/environments/dev show -json dev.tfplan | python3 scripts/check-billing-test-plan.py
+          fi
