@@ -203,6 +203,16 @@ resource "aws_secretsmanager_secret" "server_jwt" {
   tags = local.common_tags
 }
 
+resource "aws_secretsmanager_secret" "server_billing_test" {
+  name                    = "/ipgo/dev/server-billing-test"
+  description             = "TEST-only Toss credentials and billing storage keys; values are provisioned out of band"
+  recovery_window_in_days = 30
+  tags                    = local.common_tags
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "aws_secretsmanager_secret" "ai_database" {
   name                    = "/ipgo/dev/ai-database"
   description             = "FastAPI read-only database credentials; value is provisioned out of band"
@@ -301,6 +311,7 @@ module "identity" {
     aws_secretsmanager_secret.server_database.arn,
     aws_secretsmanager_secret.server_jwt.arn,
     aws_secretsmanager_secret.server_mail_password.arn,
+    aws_secretsmanager_secret.server_billing_test.arn,
   ]
   ai_secret_arns = [
     aws_secretsmanager_secret.ai_database.arn,
