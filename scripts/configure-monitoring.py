@@ -17,6 +17,8 @@ def settings(env):
     if enabled == "true":
         email = env.get("ALERT_EMAIL", "")
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            if env.get("GITHUB_ACTOR") == "dependabot[bot]":
+                raise ValueError("Dependabot cannot read Actions AWS_ALERT_EMAIL. Use the reviewed lockfile-only manual plan from an allowed dev/feature workflow; do not disable monitoring or substitute an email.")
             raise ValueError("Set the private AWS_ALERT_EMAIL secret before enabling monitoring.")
         budget = env.get("MONTHLY_BUDGET_USD", "") or "50"
         try:
