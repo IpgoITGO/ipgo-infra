@@ -19,6 +19,18 @@
 - AI: FastAPI 코드, 계산 엔진, Docker image, 계산용 DB 조회
 - Client: React 코드, Vercel 배포, 브라우저 API 연동
 
+### 앞으로 새로 생기는 인프라 작업
+
+- 서비스 레포에서 발견한 인프라 요구도 이 저장소의 작업으로 분리합니다. AWS 자원·접근 권한·
+  Secret 리소스·백업·관측성과 공통 운영 정책의 작업 정의·설정 코드·검증·운영 문서를 여기서 관리합니다.
+- 서비스 기능과 함께 바뀌면 각 레포의 Issue·PR을 연결하고 선행 조건·적용 순서를 명시합니다.
+  예: DB 테이블 변경은 Server, DB 인스턴스 용량·백업 설정은 Infra가 맡습니다.
+- 서비스별 Docker image·배포 workflow, Server의 Flyway, Client의 Vercel 배포·API 연결은
+  각 서비스 레포에 둡니다. 공통 인프라 정책이 바뀌는 부분만 Infra에서 다룹니다.
+- 이 기준으로 완료·종료된 작업이나 과거 Issue·PR을 다시 열거나 기존 코드를 옮기지 않습니다.
+  기존 작업에 새 인프라 요구가 생기면 그 부분부터 분리합니다. 실제 배포·권한 변경·Secret 값
+  주입·비용 발생은 기존 승인 절차를 따르며, Secret 값은 이 저장소에 저장하지 않습니다.
+
 ## 안전
 
 - `.tfvars`, state, plan, AWS 자격 증명, 비밀번호, token과 Secret 값을 commit하지 않습니다.
