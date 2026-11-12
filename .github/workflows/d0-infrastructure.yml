@@ -107,7 +107,7 @@ jobs:
             -I -c "import cryptography,psycopg,openpyxl,boto3; print('D0 imports verified')"
           docker push "$image"
           "$RUNNER_TEMP/d0-publish-venv/bin/python" scripts/d0_publish_image.py record
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-image-digest-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-image-digest.json
@@ -168,7 +168,7 @@ jobs:
         run: '"$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_iam_preflight.py'
       - name: Preserve encrypted IAM evidence before any apply
         if: always() && (steps.iam_preflight.outcome == 'success' || steps.iam_preflight.outcome == 'failure')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-iam-snapshot-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-iam-snapshot-envelope.json
@@ -205,7 +205,7 @@ jobs:
           "$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_plan_envelope.py seal \
             "$RUNNER_TEMP/d0-plan.json" "$RUNNER_TEMP/d0-plan-envelope.json"
       - if: success() && inputs.operation != 'preflight'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-encrypted-plan-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-plan-envelope.json
@@ -215,7 +215,7 @@ jobs:
         run: '"$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_verify_tasks.py before'
       - name: Preserve encrypted previous revision evidence
         if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-task-revisions-before-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-task-revisions-before-envelope.json
@@ -238,7 +238,7 @@ jobs:
           "$RUNNER_TEMP/d0-plan-venv/bin/python" scripts/d0_verify_tasks.py after
       - name: Preserve encrypted revision verification
         if: success() && inputs.operation == 'apply' && (inputs.protect_tasks || inputs.refresh_tasks)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-task-revisions-after-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-task-revisions-after-envelope.json
@@ -313,7 +313,7 @@ jobs:
         run: '"$RUNNER_TEMP/d0-venv/bin/python" scripts/d0_iam_preflight.py'
       - name: Preserve encrypted IAM evidence before any apply
         if: always() && (steps.iam_preflight.outcome == 'success' || steps.iam_preflight.outcome == 'failure')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-iam-snapshot-${{ github.run_id }}
           path: ${{ runner.temp }}/d0-iam-snapshot-envelope.json
@@ -321,7 +321,7 @@ jobs:
       - if: success() && steps.iam_preflight.outcome == 'success'
         run: '"$RUNNER_TEMP/d0-venv/bin/python" server/scripts/d0/dispatch_install.py'
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: d0-install-result-${{ github.run_id }}
           path: |
