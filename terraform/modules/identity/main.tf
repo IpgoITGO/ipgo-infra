@@ -68,6 +68,16 @@ data "aws_iam_policy_document" "ai_secrets" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = var.ai_secret_arns
   }
+
+  dynamic "statement" {
+    for_each = var.original_database_secret_arn == null ? [] : [var.original_database_secret_arn]
+    content {
+      sid       = "V15OriginalDatabaseRead"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [statement.value]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "ai_secrets" {
@@ -88,6 +98,16 @@ data "aws_iam_policy_document" "database_secrets" {
     effect    = "Allow"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = each.value
+  }
+
+  dynamic "statement" {
+    for_each = each.key == "database-bootstrap" && var.original_database_secret_arn != null ? [var.original_database_secret_arn] : []
+    content {
+      sid       = "V15OriginalDatabaseRead"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [statement.value]
+    }
   }
 }
 

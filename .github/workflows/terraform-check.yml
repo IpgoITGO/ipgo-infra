@@ -25,6 +25,11 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: 1.17.1
+      - name: Verify approved V15 policy statements with offline plans
+        run: |
+          cp terraform/environments/dev/.terraform.lock.hcl terraform/modules/identity/.terraform.lock.hcl
+          terraform -chdir=terraform/modules/identity init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/modules/identity test
       - run: terraform fmt -check -recursive
 
   validate:

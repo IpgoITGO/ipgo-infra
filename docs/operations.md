@@ -1,5 +1,13 @@
 # Terraform 운영
 
+## V15 기존 읽기 권한의 코드 정합화
+
+V15의 기존 `ai-original-database` Secret은 metadata data source로만 참조합니다.
+AI와 DB bootstrap의 `secrets` 정책에 이미 승인·적용된 `V15OriginalDatabaseRead` 문장을
+동일 Sid/action/ARN으로 선언하며 다른 execution/task role에는 추가하지 않습니다.
+Secret 값·수명주기는 Terraform 관리에 편입하지 않습니다. 이 선언 정합화는 권한 확대나
+새 apply 승인이 아닙니다. 읽기 전용 plan에서 해당 두 IAM 제거 예정이 없어지는지 확인합니다.
+
 ## 개발 비용·장애 알림과 상세 관측
 
 `AWS_ENABLE_DEV_MONITORING=true`, `AWS_MONTHLY_BUDGET_USD=50`, `AWS_CONTAINER_INSIGHTS=disabled`를

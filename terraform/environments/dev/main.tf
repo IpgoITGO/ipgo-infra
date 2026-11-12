@@ -221,6 +221,11 @@ resource "aws_secretsmanager_secret" "ai_database" {
   tags = local.common_tags
 }
 
+# V15 created this Secret out of band. Read metadata only; do not manage its value or lifecycle.
+data "aws_secretsmanager_secret" "ai_original_database" {
+  name = "/ipgo/dev/ai-original-database"
+}
+
 resource "aws_secretsmanager_secret" "database_migrator" {
   name                    = "/ipgo/dev/database-migrator"
   description             = "Flyway database credentials; value is provisioned out of band"
@@ -303,10 +308,11 @@ module "monitoring" {
 module "identity" {
   source = "../../modules/identity"
 
-  name_prefix       = local.name_prefix
-  upload_bucket_arn = module.storage.bucket_arn
-  jobs_queue_arn    = module.messaging.jobs_queue_arn
-  results_queue_arn = module.messaging.results_queue_arn
+  name_prefix                  = local.name_prefix
+  upload_bucket_arn            = module.storage.bucket_arn
+  jobs_queue_arn               = module.messaging.jobs_queue_arn
+  results_queue_arn            = module.messaging.results_queue_arn
+  original_database_secret_arn = data.aws_secretsmanager_secret.ai_original_database.arn
   server_secret_arns = [
     aws_secretsmanager_secret.server_database.arn,
     aws_secretsmanager_secret.server_jwt.arn,
