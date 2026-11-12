@@ -7,6 +7,22 @@
 두 plan/apply workflow는 같은 입력 검증 스크립트를 사용합니다. monitoring=true인데 이메일이 없거나 잘못되면
 계획 전에 실패하므로 기존 알림을 비밀값 누락 때문에 조용히 제거하지 않습니다.
 
+### Dependabot provider plan
+
+Dependabot PR은 일반 Actions Secret을 받지 않습니다. 따라서 모니터링 이메일이 없는 자동 plan은
+계속 차단하며, 알림 해제·가짜 이메일·`pull_request_target`으로 통과시키지 않습니다.
+`dev-plan` 환경의 허용 브랜치와 OIDC/조회 권한도 변경하지 않습니다.
+검토한 dev provider lockfile 전용 PR은 기존 허용 `dev` 또는 `feature/*`의 workflow에서
+`dependency_sha`에 PR의 정확한 40자리 head SHA를 지정하여 수동 plan합니다.
+이 경로는 신뢰한 workflow/script를 유지하고 해당 lockfile만 가져오며, 다른 파일 변경이나
+현재 dev와 다른 Terraform 기반 코드는 AWS 인증 전에 거부합니다. 실행의 head SHA는 workflow
+SHA이고, 별도의 입력·로그 SHA가 dependency SHA입니다. 두 SHA와 Terraform 기반을 함께 대조합니다.
+원래 Dependabot 자동 실패를 수동 성공으로 덮어 기록하지 않으며 병합 전에 별도 plan 결과를 확인합니다.
+bootstrap PR의 기존 `Terraform dev plan`은 bootstrap 리소스 plan이 아닙니다. bootstrap은 별도
+state·변수·역할 검토가 필요하며 이 경로는 bootstrap lockfile을 받지 않습니다.
+동시 실행 그룹은 PR 번호 또는 수동 dependency SHA별로 분리해 다른 PR의 plan을 취소하지 않습니다.
+이 workflow는 읽기 전용 plan만 수행하며 apply/배포를 실행하지 않습니다.
+
 기존 개발 월 50 USD 한도를 따릅니다. 실제 지출 40/50 USD와 예상 50 USD 초과 알림을 보냅니다.
 이것은 알림 기준이며 월 사용료를 50 USD 이하로 자동 제한하는 장치는 아닙니다. 서비스 중지·자동 제한 동작은 없습니다.
 세금은 포함하고 credit/refund는 제외해 보수적으로 계산합니다. 비용 집계는 즉시 반영되지 않으며

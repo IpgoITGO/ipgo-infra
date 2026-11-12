@@ -7,6 +7,25 @@ import unittest
 spec = importlib.util.spec_from_file_location("guard", pathlib.Path(__file__).with_name("check-monitoring-plan.py"))
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
+settings_spec = importlib.util.spec_from_file_location('monitoring_inputs', pathlib.Path(__file__).with_name('configure-monitoring.py'))
+monitoring_inputs = importlib.util.module_from_spec(settings_spec)
+settings_spec.loader.exec_module(monitoring_inputs)
+
+
+class MonitoringInputTests(unittest.TestCase):
+    def test_dependabot_missing_secret_fails_with_manual_route_without_fallback(self):
+        with self.assertRaisesRegex(ValueError, 'reviewed lockfile-only manual plan'):
+            monitoring_inputs.settings({'DEV_MONITORING_ENABLED':'true','GITHUB_ACTOR':'dependabot[bot]'})
+
+    def test_missing_secret_for_normal_actor_still_fails(self):
+        with self.assertRaisesRegex(ValueError, 'private AWS_ALERT_EMAIL'):
+            monitoring_inputs.settings({'DEV_MONITORING_ENABLED':'true'})
+
+    def test_valid_private_input_preserves_monitoring_for_both_actors(self):
+        for actor in ['dependabot[bot]','reviewer']:
+            result=monitoring_inputs.settings({'DEV_MONITORING_ENABLED':'true','GITHUB_ACTOR':actor,'ALERT_EMAIL':'fixture@example.invalid'})
+            self.assertEqual(result['TF_VAR_enable_dev_monitoring'],'true')
+            self.assertEqual(result['TF_VAR_alert_email'],'fixture@example.invalid')
 
 
 def resource(address, actions, before=None, after=None):

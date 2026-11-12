@@ -8,6 +8,10 @@ on:
       - "terraform/**"
   workflow_dispatch:
     inputs:
+      dependency_sha:
+        description: "Reviewed full SHA changing only the dev provider lockfile; use trusted dev/feature workflow code"
+        type: string
+        default: ""
       billing_test_only:
         description: "Plan only the dedicated TEST billing Secret and server execution read policy"
         type: boolean
@@ -18,7 +22,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: terraform-dev-plan
+  group: terraform-dev-plan-${{ github.event.pull_request.number || inputs.dependency_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -36,6 +40,7 @@ jobs:
         id: scope
         env:
           SOURCE_EVENT: ${{ github.event_name }}
+          DEPENDENCY_SHA: ${{ inputs.dependency_sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/ci-terraform-scope.py
@@ -52,6 +57,16 @@ jobs:
     environment: dev-plan
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare reviewed dependency lockfile before AWS credentials
+        env:
+          SOURCE_EVENT: ${{ github.event_name }}
+          DEPENDENCY_SHA: ${{ inputs.dependency_sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci-terraform-scope.py
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: 1.17.1
