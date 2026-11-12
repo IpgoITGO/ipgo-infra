@@ -30,6 +30,12 @@ variable "ai_secret_arns" {
   default     = []
 }
 
+variable "original_database_secret_arn" {
+  description = "Existing V15 Secret ARN; preserves the approved AI and bootstrap read statements."
+  type        = string
+  default     = null
+}
+
 variable "database_bootstrap_secret_arns" {
   description = "Secrets the database bootstrap task may inject, including the RDS administrator."
   type        = list(string)
