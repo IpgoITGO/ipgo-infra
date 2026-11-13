@@ -3,7 +3,16 @@
 개발 API 주소는 `https://ipgo-dev-api.iwhya.kr`이다. 프론트의 API 주소와 로그인 방법은 유지한다.
 DB는 기존 private RDS를 사용하며 데이터, DB 역할, JWT 키, S3와 큐를 옮기거나 초기화하지 않는다.
 
-## 현재 요약 — 2026-11-13 11:00 KST 관측
+## 현재 요약 — 2026-11-13 12:46 KST 관측
+
+- Infra #63에서 공식 AWS NAS 읽기 MCP로 계정·서울 리전과 Server/AI 서비스·실행 태스크·태스크 정의를 확인했다.
+  Server TD46/`1b3be78`과 AI TD22/`8a7e970`은 같은 container instance에서 각각 목표 1·실행 1·대기 0이며,
+  두 앱 컨테이너의 자체 health check 상태는 `HEALTHY`였다. 외부 HTTP·실제 업무 흐름은 이번에 시험하지 않았다.
+- Server 정책은 아래 계약과 이미 일치하여 AWS 변경·배포·재기동 없이 선행 읽기 확인을 마쳤다.
+  Secret 값·IAM 정책·호스트 여유 자원과 실제 LLM 동작은 미조회다. 기존 AI 정책 및 적용 승인 범위는 유지한다.
+- 다음은 Infra 문서 검토 후 Server #209의 정책 사전 검사·자동 설정 제거다. 실제 배포 검증은 별도 승인 후 수행한다.
+
+## 이전 관측 — 2026-11-13 11:00 KST
 
 - 공식 AWS NAS 읽기 MCP로 계정·서울 리전을 확인하고 ECS 서비스·실행 태스크·태스크 정의를 조회했다.
   AI TD21/`8a7e970`과 Server TD46/`1b3be78`은 같은 호스트에서 각각 목표 1·실행 1·대기 0이며,
@@ -124,6 +133,60 @@ Secret 값은 조회하지 않았다. 계정 ID·ARN·내부 주소·원본 응�
 AI 코드 revert는 제거했던 정책 변경 명령을 되살릴 수 있으므로 정책 소유권·호환성을 확인한다.
 정상 이미지 복구 시에도 현재 승인된 설정·업무 처리 상태를 보존하고, 중복 처리 가능성을 확인한다.
 queue purge·업무 데이터 삭제·DB 전체 복원을 기본 복구 수단으로 사용하지 않는다.
+
+## 공유 호스트 Server 배포 정책
+
+관련 작업은 [Infra #63](https://github.com/IpgoITGO/ipgo-infra/issues/63)과
+[Server #209](https://github.com/IpgoITGO/ipgo-server/issues/209)다. 이 절은 개발 onebox Server의 정책 정본이다.
+AI #61 계약과 legacy Fargate 서비스 정책은 별도이며, 기존 코드를 일괄 이전하지 않는다.
+
+### 정책과 실제 확인
+
+2026-11-13 12:46 KST 공식 AWS NAS 읽기 MCP의 계정·서울 리전 확인 후 `DescribeServices`,
+`ListTasks`, `DescribeTasks`, `DescribeTaskDefinition`으로 아래 값을 확인했다. API 실패·후속 페이지는 없었다.
+
+| 항목 | 정책·관측값 |
+| --- | --- |
+| 실행 방식 | EC2, `REPLICA`, ECS controller, `ROLLING` |
+| 배포 비율 | `minimumHealthyPercent=0`, `maximumPercent=100` |
+| 실패 복구 | deployment circuit breaker의 enable·rollback 모두 활성 |
+| AZ 재균형 | `availabilityZoneRebalancing=DISABLED` |
+| Server 실행 기반(관측) | ARM64/Linux, `bridge`, 메모리 448MiB, container/고정 host 8080 |
+| 수량(관측) | 목표 1·실행 1·대기 0; 배포 입력은 기존 승인 범위 0 또는 1 유지 |
+| 공유 상태(관측) | AI TD22와 같은 container instance; 두 앱 자체 health check `HEALTHY` |
+
+단일 호스트에서 고정 포트 8080을 쓰는 두 Server 태스크를 동시에 배치할 수 없다.
+`0/100`은 기존 태스크를 내린 뒤 새 태스크를 시작할 수 있게 하므로 재배포에는 일시 중단이 있다.
+기존 `maintenance_approved`와 승인한 수량·SHA·영향 확인을 유지한다.
+
+### 관리 책임과 Server 검사 계약
+
+- Infra가 정책 결정·변경·독립 검증·복구와 이 절을 관리한다. 기존 공식 AWS MCP 관리 경로를 유지하고,
+  onebox 서비스를 Terraform으로 일괄 이전하지 않는다. Terraform compute의 Fargate `100/200`과 혼동하지 않는다.
+- Server는 이미지·태스크 정의 배포, 승인 범위 내 수량 반영, rollout·앱 검증을 담당한다.
+  사전 검사와 기존 active template 확인을 사용하는 최초 ECS 쓰기 직전에 위 표의 실행 방식·비율·실패 복구·AZ 재균형을 읽어 대조한다.
+  누락·조회 실패·불일치 시 쓰기 전에 중단한다. workflow는 배포 정책을 자동 설정·복구하지 않는다.
+- 수량·메모리·포트·이미지·Secret 참조·IAM은 이번 정책 분리로 변경하지 않는다. 실행 기반과 수량은 관측 근거이며,
+  이 작업이 별도 capacity 승인이나 호스트 자원 검사를 대신하지 않는다. 기존 이미지·템플릿·rollout·앱 검사도 유지한다.
+- 배포 후 같은 정책을 다시 검사하고 실패하면 배포 성공으로 처리하지 않는다. AI 동작·공유 호스트 영향은 별도로 확인한다.
+
+### 적용 순서·검증 한계·복구
+
+1. Infra #63 정책 문서를 검토하고 실제 일치 근거를 Server #209에 연결한다. 이번 확인에서는 AWS 쓰기가 필요 없었다.
+2. Server #209에서 사전/쓰기 직전/배포 후 검사와 회귀검사를 추가하고 정책 설정 단계를 제거한다.
+   문서와 실제 일치 근거 확인 후 병합·적용하며, 과거 관측을 쓰기 직전 fresh 확인으로 재사용하지 않는다.
+3. 정확한 SHA·환경·일시 중단 영향·검증·복구를 별도 승인받은 실제 배포에서 rollout·앱 health·정책 유지·AI 영향을 확인한다.
+   코드·CI·실제 배포·사용자 업무 성공을 각각 구분한다.
+
+이번에는 Server와 AI 2개 서비스와 실행 태스크 2개를 확인했다. 호스트 상세·잔여 CPU/메모리·장기 부하·외부 HTTP·
+사용자 업무·Secret 값·IAM 정책은 검사하지 않았다. AI TD22는 이번 관측값이며 이전 TD21 관측을 불변으로 보고하지 않는다.
+계정 ID·ARN·내부 주소·원본 응답은 공개 문서에 추가하지 않는다.
+
+AWS 변경이 없으므로 이번 운영 rollback 대상은 없다. 향후 정상 이미지 복구는 Server, 정책 복구는 Infra가 맡는다.
+정책 불일치 시 동시 변경·관리 경로를 확인하고, 승인한 필드만 변경하며 나머지 설정을 보존한다.
+중요 설정 변경 전 HDD 복구 스냅샷과 별도 승인을 확인하고 변경 뒤 독립 조회한다.
+Server 코드 revert가 정책 설정 명령을 되살릴 수 있으므로 소유권·호환성을 확인한다.
+업무 데이터 삭제·queue purge·DB 전체 복원을 기본 복구 수단으로 사용하지 않는다.
 
 ## 최초 이전 당시 코드와 검증 범위 (과거 기록)
 
