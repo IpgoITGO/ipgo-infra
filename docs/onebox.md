@@ -3,7 +3,16 @@
 개발 API 주소는 `https://ipgo-dev-api.iwhya.kr`이다. 프론트의 API 주소와 로그인 방법은 유지한다.
 DB는 기존 private RDS를 사용하며 데이터, DB 역할, JWT 키, S3와 큐를 옮기거나 초기화하지 않는다.
 
-## 현재 요약 — 2026-11-13 12:46 KST 관측
+## 현재 요약 — 2026-11-13 13:23~13:24 KST 관측
+
+- Infra #65의 공식 AWS NAS 읽기 MCP 조회에서 jobs 큐 visibility timeout은 900초로 Terraform 기본값과 일치했다.
+  AI 서비스 TD22의 embedded worker는 같은 개발 jobs/results 큐를 참조했다. AWS 변경은 필요하지 않았다.
+- [SQS 정책](#sqs-visibility-timeout-정책)을 Infra에서 먼저 확정하고 AI #107에서 수신 요청의 고정값을 제거한다.
+  이번 문서 변경은 배포·큐 속성·IAM 변경 승인이 아니며, 기존 Server/AI 배포 정책과 승인 경계는 유지한다.
+- Terraform state/plan·실제 메시지 처리·장시간 작업은 미검증이다. results DLQ의 근사 36건은 원인 미확인으로
+  재처리·삭제하지 않았다. 아래 관측은 조회 시점의 근거이며 실행 직전 재확인이 필요하다.
+
+## 이전 관측 — 2026-11-13 12:46 KST
 
 - Infra #63에서 공식 AWS NAS 읽기 MCP로 계정·서울 리전과 Server/AI 서비스·실행 태스크·태스크 정의를 확인했다.
   Server TD46/`1b3be78`과 AI TD22/`8a7e970`은 같은 container instance에서 각각 목표 1·실행 1·대기 0이며,
@@ -187,6 +196,78 @@ AWS 변경이 없으므로 이번 운영 rollback 대상은 없다. 향후 정�
 중요 설정 변경 전 HDD 복구 스냅샷과 별도 승인을 확인하고 변경 뒤 독립 조회한다.
 Server 코드 revert가 정책 설정 명령을 되살릴 수 있으므로 소유권·호환성을 확인한다.
 업무 데이터 삭제·queue purge·DB 전체 복원을 기본 복구 수단으로 사용하지 않는다.
+
+## SQS visibility timeout 정책
+
+관련 작업: [Infra #65](https://github.com/IpgoITGO/ipgo-infra/issues/65) →
+[AI #107](https://github.com/IpgoITGO/ipgo-ai/issues/107).
+
+### 실제 설정과 코드 근거
+
+2026-11-13 13:23~13:24 KST, 공식 AWS NAS 읽기 전용 MCP로 계정·서울 리전(`ap-northeast-2`)을
+확인한 뒤 `ListQueues`·`GetQueueAttributes`와 ECS 서비스·태스크 정의 조회에 성공했다.
+메시지를 수신하거나 발행하지 않았다.
+
+| 개발 큐 | visibility timeout | long polling | 보존 기간 | visible/inflight/delayed 근사값 |
+|---|---:|---:|---:|---|
+| jobs | 900초 | 20초 | 4일 | 0/0/0 |
+| results | 120초 | 20초 | 4일 | 0/0/0 |
+| jobs DLQ | 30초 | 0초 | 14일 | 0/0/0 |
+| results DLQ | 30초 | 0초 | 14일 | 36/0/0 |
+
+jobs/results는 각각 전용 DLQ로 `maxReceiveCount=5`다. results DLQ의 36건은 근사 관측이며
+원인·유입 시점·이번 책임 분리와의 관련성은 확인하지 않았다. 내용 조회·재처리·삭제하지 않았다.
+큐별 목적이 다르므로 results/DLQ timeout을 jobs와 일괄 통일하지 않는다.
+
+- Infra 기준 `dcdf83e3ff4362cfc0054ace6113b3fba760c215`의
+  [messaging 기본값](https://github.com/IpgoITGO/ipgo-infra/blob/dcdf83e3ff4362cfc0054ace6113b3fba760c215/terraform/modules/messaging/variables.tf#L12-L16)은 900초다.
+  jobs 리소스가 이 변수를 사용하며 dev root module에는 해당 변수 override가 없다.
+- AI 기준 `270f0b838e65d38894ea7c89d04999e5170da485`의
+  [worker 수신 요청](https://github.com/IpgoITGO/ipgo-ai/blob/270f0b838e65d38894ea7c89d04999e5170da485/app/worker.py#L70-L72)은
+  `VisibilityTimeout=900`을 지정한다. 아직 AI #107이 적용된 상태가 아니다.
+- ECS에서 AI 서비스 TD22는 목표 1·실행 1·대기 0, embedded worker 설정은 `true`이며
+  개발 jobs/results 큐를 참조했다. 독립 worker와 구 AI API 서비스는 목표·실행 0이었다.
+  태스크 정의 참조 확인은 실행 코드나 실제 API 요청 패킷 검증을 대신하지 않는다.
+
+### 관리 책임과 AI 소비 계약
+
+- jobs 큐의 기본값과 변경 정책은 Infra가 관리한다. 현재 900초를 유지하며 AI #107의 적용 검증이
+  끝날 때까지 변경하지 않는다. 향후 값 변경도 처리 시간·동시 소비자·재전달·복구 영향을 검토하고 별도 승인받는다.
+- AI #107 적용 후 worker는 `ReceiveMessage`의 `VisibilityTimeout`을 생략하고 큐 기본값을 따른다.
+  [AWS API 계약](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ReceiveMessage.html)에 따라
+  요청값이 있으면 그 값이 우선하고, 생략하면 해당 큐 기본값을 사용한다. AWS 서비스의 초기 기본값 30초와
+  현재 개발 jobs 큐에 설정된 900초를 혼동하지 않는다.
+- AI는 결과 발행 후 원본 메시지 삭제, 실패 시 미삭제·재전달 동작을 유지한다. 설명의 120초/900초 혼용을
+  정리하며 큐 속성을 자동 보정하지 않는다. worker에 `GetQueueAttributes` 호출·새 설정 변수·IAM 권한을
+  추가할 필요는 없다. 메시지별 예외가 필요하면 근거와 영향을 별도 검토한다.
+- 이번 범위는 책임 중복 제거다. timeout 수치·DLQ 정책·자동 연장·재처리·권한은 변경하지 않는다.
+  900초 초과 작업의 재전달과 중복 처리 가능성은 남으며, 중복 방지·장시간 처리 보장을 완료했다고 보지 않는다.
+
+### 적용 순서와 완료 조건
+
+1. Infra #65의 실제 설정·기본값·소비 계약·복구 문서를 검토해 `dev`에 반영하고 AI #107에 근거를 연결한다.
+   관측값이 일치하므로 AWS 쓰기 없이 Infra 선행 작업을 완료할 수 있다. 문서 PR 생성만으로 완료 처리하지 않는다.
+2. AI #107에서 고정값 제거·설명 수정 후 수신 요청에 `VisibilityTimeout`이 없음을 검증한다.
+   성공·실패·결과 발행·삭제 순서·재시도·embedded worker의 회귀검사와 필수 CI를 통과한 `dev` PR을 검토한다.
+3. 배포 직전 실제 jobs 기본값 900초·진행 작업·정확한 승인 SHA/이미지·이전 호환 이미지/태스크 정의를
+   재확인한다. 불일치나 조회 실패는 자동 보정하지 않고 원인을 확인한다. 필요한 설정 변경은 영향·검증·복구와
+   HDD 스냅샷을 준비해 별도 승인받는다.
+4. 별도 승인된 AI 개발 배포에서 기존 real·embedded worker·LLM 설정과 공유 호스트 배포 정책을 보존한다.
+   배포 후 정확한 이미지·기동/worker 상태·오류 로그·jobs 기본값 900초 유지를 확인한다.
+5. 승인된 합성 작업으로 수신→결과 발행→Server 반영·원본 메시지 삭제까지 확인한 경우에만
+   실제 처리 경로 검증으로 기록한다. 문서 반영·CI·배포 성공·업무 흐름 검증은 각각 구분한다.
+
+### 검증 한계와 복구
+
+실제 속성과 코드의 관련 값 대조만 완료했다. Terraform state/plan과 전체 drift는 확인하지 않았고,
+실제 메시지 처리·처리 시간·중복 제거·장기 안정성도 검증하지 않았다. 큐 개수는 근사값이므로 0만으로
+진행 작업이 없다고 확정하지 않는다. 배포 시점의 소스·이미지·큐 설정은 다시 확인한다.
+
+현재는 문서만 변경하므로 운영 복구가 필요하지 않다. 후속 AI 변경에 문제가 생기면 실행 직전 확보·검증한
+이전 호환 이미지/태스크 정의로 복구한다. TD21 또는 이번 관측 TD22를 고정 복구 대상으로 가정하지 않는다.
+큐가 900초인 동안 기존 고정값 코드와 호환되지만 이후 기본값이 바뀌었다면 이전 코드가 900초를 다시
+강제한다는 영향을 확인한다. 큐 정책 복구는 Infra, 이미지 복구는 AI가 승인된 경로로 수행한다.
+문서/코드 revert가 운영 설정까지 복원한다고 보지 않으며 큐 purge·메시지 삭제로 복구하지 않는다.
 
 ## 최초 이전 당시 코드와 검증 범위 (과거 기록)
 
