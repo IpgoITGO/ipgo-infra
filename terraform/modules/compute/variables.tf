@@ -121,6 +121,11 @@ variable "ai_openai_secret_arn" {
   type        = string
 }
 
+variable "ai_original_database_secret_arn" {
+  description = "Existing original-reader JSON Secret used by the one-off database permission verifier."
+  type        = string
+}
+
 variable "aws_region" {
   description = "AWS Region exposed to application containers."
   type        = string
