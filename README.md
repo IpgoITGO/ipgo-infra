@@ -5,6 +5,8 @@ D0 전용 OIDC의 기본 비활성 구성·실제 적용·검증·복구 경계�
 개발 서버의 단일 호스트 전환·비용·장애 알림·복구 절차는 [운영 문서](docs/onebox.md)를 참고합니다.
 공유 호스트 AI 서비스의 배포 정책·실제 관측·검증 한계와 Infra #61 → AI #105 적용 순서는
 [AI 배포 정책](docs/onebox.md#공유-호스트-ai-배포-정책)을 따릅니다.
+Server의 정책 관리·검증·복구와 Infra #63 → Server #209 적용 순서는
+[Server 배포 정책](docs/onebox.md#공유-호스트-server-배포-정책)을 따릅니다.
 
 인증 메일 설정 후보와 별도 적용 승인·검증·복구 절차는 [개발 메일 준비](docs/dev-mail-preparation.md)를 봅니다.
 
