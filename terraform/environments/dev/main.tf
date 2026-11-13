@@ -271,6 +271,7 @@ module "compute" {
   server_database_secret_arn            = aws_secretsmanager_secret.server_database.arn
   server_jwt_secret_arn                 = aws_secretsmanager_secret.server_jwt.arn
   ai_database_secret_arn                = aws_secretsmanager_secret.ai_database.arn
+  ai_original_database_secret_arn       = data.aws_secretsmanager_secret.ai_original_database.arn
   ai_openai_secret_arn                  = aws_secretsmanager_secret.ai_openai.arn
   upload_bucket_name                    = module.storage.bucket_name
   jobs_queue_url                        = module.messaging.jobs_queue_url
@@ -335,6 +336,7 @@ module "identity" {
   database_verify_secret_arns = [
     aws_secretsmanager_secret.server_database.arn,
     aws_secretsmanager_secret.ai_database.arn,
+    data.aws_secretsmanager_secret.ai_original_database.arn,
   ]
   tags = local.common_tags
 }

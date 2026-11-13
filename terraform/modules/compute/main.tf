@@ -355,6 +355,7 @@ resource "aws_ecs_task_definition" "database_verify" {
       { name = "IPGO_SERVER_PASSWORD", valueFrom = "${var.server_database_secret_arn}:password::" },
       { name = "IPGO_AI_READER_USERNAME", valueFrom = "${var.ai_database_secret_arn}:username::" },
       { name = "IPGO_AI_READER_PASSWORD", valueFrom = "${var.ai_database_secret_arn}:password::" },
+      { name = "IPGO_AI_SERVICE_READER_PASSWORD", valueFrom = "${var.ai_original_database_secret_arn}:password::" },
     ]
     logConfiguration = {
       logDriver = "awslogs"

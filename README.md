@@ -84,6 +84,10 @@ apply 전에 예상 비용과 종료 시점을 검토해야 합니다.
 
 ## 개발 배포 task 검증 읽기 권한
 
+DB 권한 검증 task는 기존 원본 reader Secret의 `password`도 주입받습니다.
+검증 실행 역할에는 해당 Secret 하나의 `GetSecretValue`만 추가하며, runtime 역할과 비밀번호는 변경하지 않습니다.
+V31/V32 적용 후 누락된 참조를 보완한 경우 migration을 반복하지 않고 같은 DB image의 verify task만 실행합니다.
+
 bootstrap의 Server/AI GitHub 배포 역할에 `ecs:ListTasks`와 `ecs:DescribeTasks`를
 추가하는 코드입니다. `ArnEquals ecs:cluster`로 기존 개발 cluster만 허용하며 새 쓰기 권한은
 추가하지 않습니다. 앱 저장소의 배포 전후 task/image/HEALTHY 확인에 필요합니다.
