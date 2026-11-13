@@ -9,6 +9,8 @@ Server의 정책 관리·검증·복구와 Infra #63 → Server #209 적용 순�
 [Server 배포 정책](docs/onebox.md#공유-호스트-server-배포-정책)을 따릅니다.
 SQS jobs 기본값의 관리 책임·실제 관측·검증 한계와 Infra #65 → AI #107 적용 순서는
 [SQS visibility timeout 정책](docs/onebox.md#sqs-visibility-timeout-정책)을 따릅니다.
+DA-01 로컬 연동 시험의 자원·접근 경계와 Infra #68 → AI #57 적용 순서는
+[로컬 시험 격리 계약](docs/local-engine-isolation.md)을 따릅니다. 현재는 계약 검토 단계이며 환경 구축·연동 시험은 미완료입니다.
 
 인증 메일 설정 후보와 별도 적용 승인·검증·복구 절차는 [개발 메일 준비](docs/dev-mail-preparation.md)를 봅니다.
 
