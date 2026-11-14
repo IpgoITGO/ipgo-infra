@@ -43,6 +43,7 @@ def json_lines(output):
 def close_check(directory, event_id, runner=subprocess.run):
     """라우팅 마감·알림을 같은 호출에서 처리한다. 알림 확인/ack·원장 종료는 자동 수행하지 않는다."""
     directory = Path(directory)
+    started, started_at = time.perf_counter(), datetime.now(timezone.utc).isoformat()
     journal = worklog.transact(directory, lambda _: None)
     worklog.require(journal[-1].get("stage") == "finalization", "finalization stage required")
     proof = directory / "completion.json"
@@ -76,8 +77,61 @@ def close_check(directory, event_id, runner=subprocess.run):
                     and isinstance(report["pending_notices"], list) and isinstance(report["new_notices"], list),
                     "output refresh incomplete")
     pending = bool(report["pending_notices"] or report["new_notices"] or report["pending_notice_count"])
-    return {"state": "OUTPUT_NOTICE_PENDING" if pending else "READY_TO_FINISH",
+    status = {"state": "OUTPUT_NOTICE_PENDING" if pending else "READY_TO_FINISH",
+            "started_at": started_at, "checked_at": datetime.now(timezone.utc).isoformat(),
+            "duration_seconds": time.perf_counter() - started,
             "notices": report, "journal_closed": False, "authorization_granted": False}
+    save(directory / f"close-check-{time.time_ns()}.json", status)
+    return status
+
+
+def merge_guard(directory, snapshot_path, plan_path):
+    """판단 입력을 먼저 봉인하고 실패 조건을 보존한다. 병합·승인은 수행하지 않는다."""
+    directory = Path(directory)
+    worklog.evidence(snapshot_path)
+    worklog.evidence(plan_path)
+    snapshot, plan = read(snapshot_path), read(plan_path)
+    key = str(time.time_ns())
+    source = directory / f"merge-guard-{key}-input.json"
+    save(source, {"at": datetime.now(timezone.utc).isoformat(), "snapshot": snapshot, "plan": plan})
+    reasons = []
+    if not isinstance(plan.get("author"), str) or not plan["author"]:
+        reasons.append({"code": "INVALID_PLAN_AUTHOR"})
+    def equal(code, actual, expected):
+        if actual != expected:
+            reasons.append({"code": code, "expected": expected, "observed": actual})
+    equal("HEAD_CHANGED", snapshot.get("headRefOid"), plan.get("sha"))
+    if not isinstance(plan.get("sha"), str) or not re.fullmatch(r"[a-f0-9]{40}", plan["sha"]):
+        reasons.append({"code": "INVALID_PLAN_SHA"})
+    equal("BASE_BRANCH", snapshot.get("baseRefName"), "dev")
+    equal("PR_STATE", snapshot.get("state"), "OPEN")
+    equal("DRAFT", snapshot.get("isDraft"), False)
+    equal("MERGEABLE", snapshot.get("mergeable"), "MERGEABLE")
+    equal("MERGE_STATE", snapshot.get("mergeStateStatus"), "CLEAN")
+    equal("AUTHOR", (snapshot.get("author") or {}).get("login"), plan.get("author"))
+    if snapshot.get("reviewDecision") not in ("", "APPROVED"):
+        reasons.append({"code": "APPROVAL", "observed": snapshot.get("reviewDecision")})
+    if any(x.get("state") == "CHANGES_REQUESTED" for x in snapshot.get("latestReviews", [])):
+        reasons.append({"code": "CHANGES_REQUESTED"})
+    threads = snapshot.get("threads", {})
+    if threads.get("pageInfo", {}).get("hasNextPage") is not False or "nodes" not in threads:
+        reasons.append({"code": "INCOMPLETE_REVIEW_THREADS"})
+    elif any(x.get("isResolved") is not True for x in threads["nodes"]):
+        reasons.append({"code": "UNRESOLVED_REVIEW"})
+    checks, expected = snapshot.get("statusCheckRollup", []), plan.get("checks", [])
+    if not isinstance(expected, list) or not all(isinstance(x, str) for x in expected):
+        reasons.append({"code": "INVALID_PLAN_CHECKS"})
+        expected = []
+    if not expected or len(set(expected)) != len(expected) or len(checks) != len(expected) or {x.get("name") for x in checks} != set(expected):
+        reasons.append({"code": "CHECK_SET", "expected": expected, "observed": [x.get("name") for x in checks]})
+    failed = [{"name": x.get("name"), "status": x.get("status"), "conclusion": x.get("conclusion")} for x in checks
+              if x.get("status") != "COMPLETED" or x.get("conclusion") != "SUCCESS"]
+    if failed:
+        reasons.append({"code": "CHECK_RESULT", "checks": failed})
+    result = {"state": "BLOCKED" if reasons else "MERGE_GUARD_PASSED", "reasons": reasons,
+              "input": worklog.evidence(source), "authorization_granted": False}
+    save(directory / f"merge-guard-{key}-result.json", result)
+    return result
 
 def ci_complete(directory, plan_path, runner=subprocess.run):
     """고정된 읽기 전용 CLI로 같은 CI를 기다려 검증하고 기록 단계로 전환한다."""
@@ -306,6 +360,10 @@ def main():
     ci = sub.add_parser("ci-complete")
     ci.add_argument("directory", type=Path)
     ci.add_argument("--plan", type=Path, required=True)
+    guard = sub.add_parser("merge-guard")
+    guard.add_argument("directory", type=Path)
+    guard.add_argument("--snapshot", type=Path, required=True)
+    guard.add_argument("--plan", type=Path, required=True)
     server = sub.add_parser("server-complete")
     server.add_argument("directory", type=Path)
     server.add_argument("--worktree", type=Path, required=True)
@@ -314,7 +372,9 @@ def main():
     server.add_argument("--python-exit", type=int, required=True)
     args = parser.parse_args()
     try:
-        if args.command == "ci-complete":
+        if args.command == "merge-guard":
+            result = merge_guard(args.directory, args.snapshot, args.plan)
+        elif args.command == "ci-complete":
             result = ci_complete(args.directory, args.plan)
         elif args.command == "server-complete":
             result = server_complete(args.directory, args.worktree, args.observed_at, args.java_exit, args.python_exit)
@@ -327,7 +387,7 @@ def main():
             if args.report:
                 save(args.report, markdown(result))
         print(json.dumps(result, ensure_ascii=False))
-        return 0
+        return 2 if result.get("state") == "BLOCKED" else 0
     except (review.Blocked, KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
         print(json.dumps({"state": "BLOCKED", "reason": "EVIDENCE_INVALID_OR_OUTPUT_EXISTS",
                           "authorization_granted": False}))

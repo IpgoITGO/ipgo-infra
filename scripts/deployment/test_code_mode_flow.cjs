@@ -78,3 +78,17 @@ test('GitHub CI command failure cannot report success or finalize', async () => 
     async update_goal() {throw new Error('MUST_NOT_FINALIZE')}}
   await assert.rejects(execute(tools, {...plan, mode: 'github-ci'}), /LOCAL_COMMAND_FAILED/)
 })
+
+
+for (const exitCode of [0, 1]) {
+  test(`close registered before CI completion handles exit ${exitCode}`, async () => {
+    const order=[]
+    const tools={
+      async write_stdin({session_id,yield_time_ms}) {assert.equal(session_id,27);assert.equal(yield_time_ms,30000);order.push('wait');return {exit_code:exitCode,output:''}},
+      async exec_command({cmd}) {order.push(cmd.includes('close-check')?'check':'finish');return {exit_code:0,output:JSON.stringify({state:cmd.includes('close-check')?'READY_TO_FINISH':'completed'})}},
+      async update_goal() {order.push('goal')},
+    }
+    await execute(tools,{...plan,mode:'close',session_id:27,event_id:'a'.repeat(32),complete_goal:true})
+    assert.deepEqual(order,exitCode===0?['wait','check','goal','finish']:['wait'])
+  })
+}
