@@ -117,8 +117,8 @@ node --test scripts/deployment/test_code_mode_flow.cjs
  "jobs":["deploy-contract","test","container","arm-test"]}
 ```
 
-원장을 validation 단계로 전환한 후 실행합니다. `gh run watch --exit-status --interval 30`과
-REST run/jobs 조회만 사용하며 dispatch·merge·승인·배포를 호출하지 않습니다.
+원장을 validation 단계로 전환한 후 실행합니다. REST run 상태를 5초 간격으로 조회하고 완료 뒤 jobs를 한 번만
+조회하며 읽기 전용 호출만 사용하며 dispatch·merge·승인·배포를 호출하지 않습니다.
 정확 SHA·branch·event·workflow·필수 job 집합과 모든 성공 상태를 확인합니다.
 누락·추가 job·skip·실패·계획 변경은 거부하며 원본/실패 로그를 덮어쓰지 않습니다.
 필수 workflow가 여러 개면 각각의 근거가 필요하며 이 단일 run 영수증으로 대체하지 않습니다.
@@ -129,3 +129,11 @@ REST run/jobs 조회만 사용하며 dispatch·merge·승인·배포를 호출�
 결과 정본은 `completion.json`, PR/상태 문서는 짧은 결과와 근거 링크만 사용합니다.
 마감은 기존 `mode: 'close'`로 알림 확인→Goal→원장 종료를 이어서 처리합니다.
 쓰기 직전 fresh 확인과 병합 뒤 정확 SHA 검증은 생략하지 않습니다.
+
+
+`ci-profile.json`은 perf_counter 경과시간, process_time Python CPU, RUSAGE_CHILDREN gh CPU,
+명시적 poll sleep과 CLI 실행 시간을 기록합니다. CLI의 CPU 제외 시간은 네트워크·프로세스 시작·
+스케줄링을 함께 포함하므로 순수 네트워크 시간으로 표시하지 않습니다. 원격 CI worker의 CPU는
+GitHub jobs API로 관측할 수 없으며 job 경과시간과 구분합니다. 5초는 조회 간격이며 API 응답/공개
+지연까지 포함한 감지 상한을 보장하지 않습니다. 요청당 30초/전체 30분 제한을 두고 API 오류는
+원본을 보존한 뒤 중단합니다. 성공 polling을 자동 재시도 실패로 세지 않으며 실패 요청을 재전송하지 않습니다.
