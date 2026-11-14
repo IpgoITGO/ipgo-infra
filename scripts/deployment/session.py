@@ -139,12 +139,27 @@ def merge_guard(directory, snapshot_path, plan_path):
     equal("AUTHOR", (snapshot.get("author") or {}).get("login"), plan.get("author"))
     if snapshot.get("reviewDecision") not in ("", "APPROVED"):
         reasons.append({"code": "APPROVAL", "observed": snapshot.get("reviewDecision")})
-    if any(x.get("state") == "CHANGES_REQUESTED" for x in snapshot.get("latestReviews", [])):
+    reviews = snapshot.get("latestReviews", [])
+    if not isinstance(reviews, list) or not all(isinstance(x, dict) for x in reviews):
+        reasons.append({"code": "REVIEWS_TYPE", "expected": "array of objects", "observed": type(reviews).__name__})
+        reviews = []
+    if any(x.get("state") == "CHANGES_REQUESTED" for x in reviews):
         reasons.append({"code": "CHANGES_REQUESTED"})
     threads = snapshot.get("threads", {})
-    if threads.get("pageInfo", {}).get("hasNextPage") is not False or "nodes" not in threads:
+    if not isinstance(threads, dict):
+        reasons.append({"code": "THREADS_TYPE", "expected": "object", "observed": type(threads).__name__})
+        threads = {}
+    page = threads.get("pageInfo", {})
+    if not isinstance(page, dict):
+        reasons.append({"code": "REVIEW_PAGE_TYPE", "expected": "object", "observed": type(page).__name__})
+        page = {}
+    nodes = threads.get("nodes", [])
+    if not isinstance(nodes, list) or not all(isinstance(x, dict) for x in nodes):
+        reasons.append({"code": "REVIEW_NODES_TYPE", "expected": "array of objects", "observed": type(nodes).__name__})
+        nodes = []
+    if page.get("hasNextPage") is not False or "nodes" not in threads:
         reasons.append({"code": "INCOMPLETE_REVIEW_THREADS"})
-    elif any(x.get("isResolved") is not True for x in threads["nodes"]):
+    elif any(x.get("isResolved") is not True for x in nodes):
         reasons.append({"code": "UNRESOLVED_REVIEW"})
     checks, expected = snapshot.get("statusCheckRollup", []), plan.get("checks", [])
     if not isinstance(checks, list) or not all(isinstance(x, dict) for x in checks):

@@ -86,5 +86,20 @@ class MergeGuardTests(unittest.TestCase):
                 self.assertEqual(json.loads(Path(result["input"]["path"]).read_text())["snapshot"]["statusCheckRollup"],value)
                 self.assertEqual(len(list(directory.glob("merge-guard-*-result.json"))),1)
 
+    def test_malformed_review_containers_preserve_explicit_block_reasons(self):
+        cases=[("latestReviews",None,"REVIEWS_TYPE"),("latestReviews",{},"REVIEWS_TYPE"),
+               ("latestReviews",[None],"REVIEWS_TYPE"),("threads",None,"THREADS_TYPE"),
+               ("threads",{"pageInfo":None,"nodes":[]},"REVIEW_PAGE_TYPE"),
+               ("threads",{"pageInfo":{"hasNextPage":False},"nodes":None},"REVIEW_NODES_TYPE"),
+               ("threads",{"pageInfo":{"hasNextPage":False},"nodes":[None]},"REVIEW_NODES_TYPE")]
+        for field,value,code in cases:
+            with self.subTest(field=field,value=value), tempfile.TemporaryDirectory() as temp:
+                directory=Path(temp);snapshot=self.fixture();snapshot[field]=value
+                result=self.run_guard(directory,snapshot)
+                self.assertEqual(result["state"],"BLOCKED")
+                self.assertIn(code,[r["code"] for r in result["reasons"]])
+                self.assertEqual(json.loads(Path(result["input"]["path"]).read_text())["snapshot"][field],value)
+                self.assertEqual(len(list(directory.glob("merge-guard-*-result.json"))),1)
+
 if __name__=="__main__":
     unittest.main()
