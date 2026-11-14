@@ -121,7 +121,7 @@ node --test scripts/deployment/test_code_mode_flow.cjs
  "jobs":["deploy-contract","test","container","arm-test"]}
 ```
 
-원장을 validation 단계로 전환한 후 실행합니다. REST run 상태를 5초 간격으로 조회하고 완료 뒤 jobs를 한 번만
+원장을 validation 단계로 전환한 후 실행합니다. REST run 상태를 실행 중2초/대기열5초의 요청 시작 간격으로 조회하고 완료 뒤 jobs를 한 번만
 조회하며 읽기 전용 호출만 사용하며 dispatch·merge·승인·배포를 호출하지 않습니다.
 정확 SHA·branch·event·workflow·필수 job 집합과 모든 성공 상태를 확인합니다.
 누락·추가 job·skip·실패·계획 변경은 거부하며 원본/실패 로그를 덮어쓰지 않습니다.
@@ -138,7 +138,7 @@ node --test scripts/deployment/test_code_mode_flow.cjs
 `ci-profile.json`은 perf_counter 경과시간, process_time Python CPU, RUSAGE_CHILDREN gh CPU,
 명시적 poll sleep과 CLI 실행 시간을 기록합니다. CLI의 CPU 제외 시간은 네트워크·프로세스 시작·
 스케줄링을 함께 포함하므로 순수 네트워크 시간으로 표시하지 않습니다. 원격 CI worker의 CPU는
-GitHub jobs API로 관측할 수 없으며 job 경과시간과 구분합니다. 5초는 조회 간격이며 API 응답/공개
+GitHub jobs API로 관측할 수 없으며 job 경과시간과 구분합니다. 2초/5초는 요청 시작 간격이며 API 응답/공개
 지연까지 포함한 감지 상한을 보장하지 않습니다. 요청당 30초/전체 30분 제한을 두고 API 오류는
 원본을 보존한 뒤 중단합니다. 성공 polling을 자동 재시도 실패로 세지 않으며 실패 요청을 재전송하지 않습니다.
 
@@ -168,3 +168,10 @@ CI 결과가 null이거나 object 배열이 아닌 경우에도 CHECKS_TYPE 사�
 이미 결과가 확정된 도구 PR의 게시·정리는 실제 업무 CI가 실행 중일 때 끝내고, 해당 실제 PR의
 최종 성공 결과는 CI 종료 후 게시합니다. 고정된 소스/검사 정의는 바꾸지 않으며 총 시간과 CI 뒤
 시간을 함께 비교해 단순히 다른 단계로 옮긴 시간을 단축으로 계산하지 않습니다.
+
+
+`ci-requests.json`과 ci-watch.log의 request에는 요청 시작/종료·wall 시간이 남습니다.
+응답 뒤 고정 대기를 더하지 않고 목표 시작 간격에서 이미 쓴 요청 시간을 뺍니다. 느린 응답에는
+추가 대기를 붙이지 않으며 요청은 직렬로 유지합니다. 완료 뒤 jobs1회·정확 SHA/필수 job 검증·
+오류 중단은 그대로입니다. 실행 중 조회 횟수/CPU가 늘 수 있으므로 실제 구간·호출 수를 함께
+비교하며, GitHub 공개 지연·네트워크 지연이 없어졌거나 감지 상한이 보장된다고 보고하지 않습니다.
