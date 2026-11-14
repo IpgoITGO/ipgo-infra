@@ -127,8 +127,6 @@ class LocalServerTests(unittest.TestCase):
                         session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 0, 0)
                     self.assertFalse((directory / 'server-validation.json').exists())
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CloseTests(unittest.TestCase):
@@ -148,3 +146,7 @@ class CloseTests(unittest.TestCase):
                 self.assertEqual(session.close_check(directory, "a" * 32, runner)["state"], "OUTPUT_NOTICE_PENDING")
             self.assertEqual(calls, ["desktop-finish", "output-report", "output-report"])
             self.assertFalse((directory / "summary.json").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
