@@ -113,6 +113,15 @@ def merge_guard(directory, snapshot_path, plan_path):
     key = str(time.time_ns())
     source = directory / f"merge-guard-{key}-input.json"
     save(source, {"at": datetime.now(timezone.utc).isoformat(), "snapshot": snapshot, "plan": plan})
+    malformed = []
+    for label, value in (("SNAPSHOT_TYPE", snapshot), ("PLAN_TYPE", plan)):
+        if not isinstance(value, dict):
+            malformed.append({"code": label, "expected": "object", "observed": type(value).__name__})
+    if malformed:
+        result = {"state": "BLOCKED", "reasons": malformed,
+                  "input": worklog.evidence(source), "authorization_granted": False}
+        save(directory / f"merge-guard-{key}-result.json", result)
+        return result
     reasons = []
     if not isinstance(plan.get("author"), str) or not plan["author"]:
         reasons.append({"code": "INVALID_PLAN_AUTHOR"})

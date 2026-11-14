@@ -60,5 +60,21 @@ class MergeGuardTests(unittest.TestCase):
             self.assertEqual(result["state"],"BLOCKED")
             self.assertIn("INVALID_PLAN_AUTHOR",[r["code"] for r in result["reasons"]])
 
+    def test_non_object_input_preserves_raw_and_returns_explicit_block_reason(self):
+        for target in ("snapshot", "plan"):
+            for value in ([], None, "bad"):
+                with self.subTest(target=target, value=value), tempfile.TemporaryDirectory() as temp:
+                    directory=Path(temp)
+                    snapshot=self.fixture();plan={"sha":"a"*40,"author":"fixture","checks":["test"]}
+                    if target=="snapshot":snapshot=value
+                    else:plan=value
+                    source=directory/"snapshot.json";source.write_text(json.dumps(snapshot))
+                    path=directory/"plan.json";path.write_text(json.dumps(plan))
+                    result=session.merge_guard(directory,source,path)
+                    self.assertEqual(result["state"],"BLOCKED")
+                    self.assertIn(target.upper()+"_TYPE",[r["code"] for r in result["reasons"]])
+                    self.assertEqual(json.loads(Path(result["input"]["path"]).read_text())[target],value)
+                    self.assertEqual(len(list(directory.glob("merge-guard-*-result.json"))),1)
+
 if __name__=="__main__":
     unittest.main()
