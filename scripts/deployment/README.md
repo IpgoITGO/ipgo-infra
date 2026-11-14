@@ -79,3 +79,28 @@ python3 -m unittest discover -s scripts/deployment -p 'test_*.py' -v
 ```
 
 테스트는 합성 AWS/JSON만 사용한다. 새 CI job도 자격 증명이나 AWS/DB 접속 없이 실행한다.
+
+## 로컬 서버 검증과 작업 마감
+
+Server의 `scripts/testing/local-gradle.sh`는 사용자 소유 캐시로 기존 Gradle 검사를 실행합니다.
+이 저장소는 검증 결과 집계와 원장만 담당하며 AWS·DB 연결이나 배포를 실행하지 않습니다.
+
+- `worklog.py start/stage/check/skip/finish`로 준비부터 최종 기록까지 시간을 남깁니다.
+  실제 업무(`actual`), 합성 검사(`synthetic`), 재생(`replay`)을 분리합니다. 명령별 인자는 `--help`로 확인합니다.
+- `session.py server-complete DIRECTORY --worktree WORKTREE --observed-at ISO_TIME --java-exit 0 --python-exit 0`는
+  원장의 `final-source-hashes.json`, `java-finished.txt`, JUnit XML, JAR와 종료 코드를 대조합니다.
+  `server-validation.json`과 XML 사본을 한 번만 보존하며 사람의 최종 검토는 별도로 남깁니다.
+- Code Mode에서 `code-mode-flow.js`를 AsyncFunction 본문으로 실행할 때 `plan`에
+  `tools_directory`(이 도구 폴더의 절대경로), `directory`(저장소 밖 `.private/작업ID`)를 전달합니다.
+  `mode: 'server-local'`에는 `worktree`, 실행 중인 `session_id`와 선택 `initial_output`이 필요합니다.
+  같은 실행을 30초 단위로 기다린 뒤 결과를 한 번 수집하고 documentation 단계로 전환합니다.
+- `mode: 'close'`는 `event_id`와 선택 `complete_goal`, `comparison_plan`을 받습니다.
+  finalization 단계와 `validation_passed: true`인 `completion.json`이 있어야 합니다.
+  `codex-route`가 설치된 환경에서만 사용하며 미안내 출력 알림이 있으면 종료를 멈춥니다.
+  알림 안내·확인, 사람 검토, 승인 판단을 자동 처리하지 않습니다. 비교 원장을 명시하지 않으면 시간 비교를 만들지 않습니다.
+
+```bash
+node --test scripts/deployment/test_code_mode_flow.cjs
+```
+
+이 검사는 합성 도구 응답만 사용합니다. 통과 자체가 실제 업무 시간 단축이나 배포 승인을 뜻하지 않습니다.

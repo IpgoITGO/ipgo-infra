@@ -3,10 +3,15 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
+import re
+import shutil
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
 import review
+import worklog
 
 
 def read(path):
@@ -23,6 +28,89 @@ def save(path, value):
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def elapsed(start, end):
+    seconds = (worklog.instant(end) - worklog.instant(start)).total_seconds()
+    worklog.require(seconds >= 0, "negative interval")
+    return seconds
+
+def json_lines(output):
+    return [json.loads(line) for line in output.splitlines() if line.strip()]
+
+def close_check(directory, event_id, runner=subprocess.run):
+    """라우팅 마감·알림을 같은 호출에서 처리한다. 알림 확인/ack·원장 종료는 자동 수행하지 않는다."""
+    directory = Path(directory)
+    journal = worklog.transact(directory, lambda _: None)
+    worklog.require(journal[-1].get("stage") == "finalization", "finalization stage required")
+    proof = directory / "completion.json"
+    if not proof.exists():
+        proof = directory / "client-receipt.json"
+    worklog.evidence(proof)
+    worklog.require(read(proof).get("validation_passed") is True, "verified completion required")
+    worklog.require(not (directory / "summary.json").exists(), "summary already exists")
+    receipt_path = directory / "router-closed.json"
+    worklog.require(re.fullmatch(r"[a-f0-9]{32}", event_id), "invalid event id")
+    def call(args):
+        response = runner(args, capture_output=True, text=True, check=True)
+        return json_lines(response.stdout)
+    if receipt_path.exists():
+        cached = read(receipt_path)
+        worklog.require(cached["event_id"] == event_id and any(
+            x.get("event_id") == event_id and x.get("status") == "success" and x.get("validation") == "passed"
+            for x in cached["result"]), "different or unconfirmed closing event")
+    else:
+        result = call(["codex-route", "desktop-finish", event_id, "--status", "success", "--validation", "passed"])
+        worklog.require(any(x.get("event_id") == event_id and x.get("status") == "success"
+                            and x.get("validation") == "passed" for x in result),
+                        "routing close not confirmed")
+        save(receipt_path, {"event_id": event_id, "result": result})
+    result = call(["codex-route", "output-report", "--refresh"])
+    report = next((x for x in result if "pending_notices" in x and "new_notices" in x
+                   and "pending_notice_count" in x), None)
+    worklog.require(report is not None, "output notice observation missing")
+    worklog.require(report.get("failed_refreshes") == 0 and
+                    type(report["pending_notice_count"]) is int and report["pending_notice_count"] >= 0
+                    and isinstance(report["pending_notices"], list) and isinstance(report["new_notices"], list),
+                    "output refresh incomplete")
+    pending = bool(report["pending_notices"] or report["new_notices"] or report["pending_notice_count"])
+    return {"state": "OUTPUT_NOTICE_PENDING" if pending else "READY_TO_FINISH",
+            "notices": report, "journal_closed": False, "authorization_granted": False}
+
+def server_complete(directory, worktree, observed_at, java_exit, python_exit):
+    directory, worktree = Path(directory), Path(worktree).resolve()
+    worklog.require(java_exit == python_exit == 0, "local command failed")
+    output = directory / "server-validation.json"
+    worklog.require(not output.exists() and not (directory / "final-xml").exists(), "existing local evidence")
+    source = read(directory / "final-source-hashes.json")
+    worklog.require(bool(source), "missing source fingerprints")
+    for name, expected in source.items():
+        path = (worktree / name).resolve()
+        worklog.require(path.is_relative_to(worktree) and digest(path) == expected, "source changed")
+    counts = {key: 0 for key in ("tests", "failures", "errors", "skipped")}
+    files = list((worktree / "build/test-results/test").glob("TEST-*.xml"))
+    worklog.require(bool(files), "missing JUnit results")
+    for path in files:
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError as error:
+            raise ValueError("invalid JUnit XML") from error
+        for key in counts:
+            counts[key] += int(root.get(key, 0))
+    worklog.require(counts["tests"] > counts["skipped"] and not counts["failures"] and not counts["errors"], "JUnit failed")
+    jars = list((worktree / "build/libs").glob("*.jar"))
+    worklog.require(bool(jars), "missing runtime JAR")
+    ended = (directory / "java-finished.txt").read_text().strip()
+    worklog.require(elapsed(ended, observed_at) >= 0, "invalid observation time")
+    facts = {"state": "LOCAL_VALIDATION_COLLECTED", "validation_passed": True,
+             "java_exit": java_exit, "python_exit": python_exit, "junit": counts,
+             "java_finished_at": ended, "observed_at": observed_at,
+             "collected_at": datetime.now(timezone.utc).isoformat(),
+             "jar_sha256": {str(path.relative_to(worktree)): digest(path) for path in jars},
+             "source_sha256": source, "human_review": "pending", "authorization_granted": False}
+    shutil.copytree(worktree / "build/test-results/test", directory / "final-xml")
+    save(output, facts)
+    return facts
 
 
 def handoff(directory, component, replay=False):
@@ -108,9 +196,22 @@ def main():
     report.add_argument("bundle", type=Path)
     report.add_argument("--client-run", type=Path, required=True)
     report.add_argument("--report", type=Path)
+    close = sub.add_parser("close-check")
+    close.add_argument("directory", type=Path)
+    close.add_argument("--event-id", required=True)
+    server = sub.add_parser("server-complete")
+    server.add_argument("directory", type=Path)
+    server.add_argument("--worktree", type=Path, required=True)
+    server.add_argument("--observed-at", required=True)
+    server.add_argument("--java-exit", type=int, required=True)
+    server.add_argument("--python-exit", type=int, required=True)
     args = parser.parse_args()
     try:
-        if args.command == "handoff":
+        if args.command == "server-complete":
+            result = server_complete(args.directory, args.worktree, args.observed_at, args.java_exit, args.python_exit)
+        elif args.command == "close-check":
+            result = close_check(args.directory, args.event_id)
+        elif args.command == "handoff":
             result = handoff(args.directory, args.component, replay=args.replay)
         else:
             result = audit(read(args.bundle), read(args.client_run))
@@ -118,7 +219,7 @@ def main():
                 save(args.report, markdown(result))
         print(json.dumps(result, ensure_ascii=False))
         return 0
-    except (review.Blocked, KeyError, ValueError, TypeError, OSError):
+    except (review.Blocked, KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
         print(json.dumps({"state": "BLOCKED", "reason": "EVIDENCE_INVALID_OR_OUTPUT_EXISTS",
                           "authorization_granted": False}))
         return 2
