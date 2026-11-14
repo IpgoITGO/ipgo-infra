@@ -26,11 +26,8 @@ class CiCompleteTests(unittest.TestCase):
         calls = []
         def runner(args, **kwargs):
             calls.append(args)
-            if args[1:3] == ["run", "watch"]:
-                self.assertEqual(args, ["gh", "run", "watch", "17", "--repo", "owner/server", "--exit-status", "--interval", "30"])
-                if fail_watch:
-                    raise subprocess.CalledProcessError(1, args)
-                return subprocess.CompletedProcess(args, 0)
+            if fail_watch:
+                raise subprocess.CalledProcessError(1, args, stderr="synthetic request failure")
             self.assertEqual(args[:2], ["gh", "api"])
             return subprocess.CompletedProcess(args, 0, json.dumps(jobs if "/jobs?" in args[2] else run), "")
         return path, runner, calls
@@ -40,14 +37,14 @@ class CiCompleteTests(unittest.TestCase):
             directory = Path(temp) / "packet"
             plan, runner, calls = self.fixture(directory)
             result = session.ci_complete(directory, plan, runner)
-            self.assertEqual(len(calls), 3)
+            self.assertEqual(len(calls), 2)
             self.assertTrue(result["validation_passed"])
             self.assertFalse(result["authorization_granted"])
             self.assertEqual(result["human_review"], "pending")
             self.assertEqual(worklog.transact(directory, lambda _: None)[-1]["stage"], "documentation")
             with self.assertRaises(ValueError):
                 session.ci_complete(directory, plan, runner)
-            self.assertEqual(len(calls), 3)
+            self.assertEqual(len(calls), 2)
 
     def test_identity_and_required_job_failures_preserve_validation_stage(self):
         changes = [lambda r, j: r.update(head_sha="b" * 40), lambda r, j: r.update(event="workflow_dispatch"),
@@ -93,7 +90,7 @@ class CiCompleteTests(unittest.TestCase):
             plan, runner, _ = self.fixture(directory)
             def changed(args, **kwargs):
                 result = runner(args, **kwargs)
-                if args[1:3] == ["run", "watch"]:
+                if "/jobs?" not in args[2]:
                     plan.write_text(plan.read_text() + " ")
                 return result
             with self.assertRaises(ValueError):
@@ -110,3 +107,40 @@ class CiCompleteTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertEqual(json.loads(result.stdout)["state"], "BLOCKED")
             self.assertNotIn("usage:", result.stderr)
+
+
+    def test_running_ci_waits_five_seconds_and_fetches_jobs_only_once(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "packet"
+            plan, runner, calls = self.fixture(directory)
+            reads = 0
+            def pending(args, **kwargs):
+                nonlocal reads
+                result = runner(args, **kwargs)
+                if "/jobs?" not in args[2]:
+                    reads += 1
+                    if reads == 1:
+                        value = json.loads(result.stdout); value.update(status="in_progress", conclusion=None)
+                        result.stdout = json.dumps(value)
+                return result
+            with patch.object(session.time, "sleep") as sleep:
+                facts = session.ci_complete(directory, plan, pending)
+            sleep.assert_called_once_with(5)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(sum("/jobs?" in c[2] for c in calls), 1)
+            profile = facts["profile"]
+            self.assertEqual(profile["api_calls"], 3)
+            for key in ("wall_seconds", "python_cpu_seconds", "gh_cpu_seconds", "cli_non_cpu_seconds", "poll_sleep_seconds", "other_non_cpu_seconds"):
+                self.assertGreaterEqual(profile[key], 0)
+
+    def test_wrong_identity_never_waits_or_fetches_jobs(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "packet"
+            plan, runner, calls = self.fixture(directory, lambda r, j: r.update(head_sha="b" * 40, status="in_progress"))
+            with patch.object(session.time, "sleep") as sleep, self.assertRaises(ValueError):
+                session.ci_complete(directory, plan, runner)
+            sleep.assert_not_called()
+            self.assertEqual(len(calls), 1)
+            self.assertTrue((directory / "ci-run.json").exists())

@@ -6,6 +6,8 @@ import os
 import subprocess
 import re
 import shutil
+import resource
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,20 +103,52 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
     worklog.require(stage["stage"] == "validation", "validation stage required")
     output = directory / "ci-validation.json"
     worklog.require(not output.exists(), "existing CI receipt")
-    # 배포/dispatch/승인/merge 호출은 없다. 실패 로그도 덮어쓰지 않는다.
+    started, cpu_started = time.perf_counter(), time.process_time()
+    def child_cpu():
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return usage.ru_utime + usage.ru_stime
+    child_started = child_cpu()
+    cli_wall = cli_python_cpu = sleep_wall = 0.0
+    api_calls = 0
+    def get(suffix):
+        nonlocal cli_wall, cli_python_cpu, api_calls
+        before, cpu_before = time.perf_counter(), time.process_time()
+        api_calls += 1
+        try:
+            response = runner(["gh", "api", f"repos/{repo}/actions/runs/{run_id}{suffix}"],
+                              capture_output=True, text=True, check=True, timeout=30)
+            return json.loads(response.stdout)
+        except subprocess.SubprocessError as error:
+            save(directory / "ci-request-failure.json", {"error": str(error),
+                 "stdout": str(getattr(error, "stdout", "") or ""),
+                 "stderr": str(getattr(error, "stderr", "") or "")})
+            raise
+        finally:
+            cli_wall += time.perf_counter() - before
+            cli_python_cpu += time.process_time() - cpu_before
+    # 상태만 5초 간격으로 읽는다. jobs 원본은 완료 뒤 한 번만 수집한다.
     with (directory / "ci-watch.log").open("x", encoding="utf-8") as stream:
         os.chmod(stream.name, 0o600)
-        runner(["gh", "run", "watch", str(run_id), "--repo", repo, "--exit-status", "--interval", "30"],
-               stdout=stream, stderr=subprocess.STDOUT, text=True, check=True)
+        while True:
+            worklog.require(time.perf_counter() - started < 1800, "CI wait deadline exceeded")
+            worklog.require(digest(plan_path) == plan_sha, "CI plan changed during wait")
+            run = get("")
+            identity = (run["id"] == run_id and run["head_sha"] == sha and run["head_branch"] == branch
+                        and run["event"] == plan["event"] and run["path"] == plan["workflow"])
+            stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "status": run["status"],
+                                     "conclusion": run["conclusion"], "identity_valid": identity}) + "\n")
+            stream.flush()
+            if not identity or run["status"] == "completed":
+                save(directory / "ci-run.json", run)
+                worklog.require(identity, "CI identity mismatch")
+                break
+            before = time.perf_counter()
+            time.sleep(5)
+            sleep_wall += time.perf_counter() - before
     observed = datetime.now(timezone.utc).isoformat()
-    def get(suffix, filename):
-        response = runner(["gh", "api", f"repos/{repo}/actions/runs/{run_id}{suffix}"],
-                          capture_output=True, text=True, check=True)
-        value = json.loads(response.stdout)
-        save(directory / filename, value)
-        return value
-    run = get("", "ci-run.json")
-    result = get("/jobs?per_page=100", "ci-jobs.json")
+    worklog.require(run["conclusion"] == "success", "CI failed")
+    result = get("/jobs?per_page=100")
+    save(directory / "ci-jobs.json", result)
     actual = result["jobs"]
     worklog.require(run["id"] == run_id and run["head_sha"] == sha and run["head_branch"] == plan["branch"]
                     and run["event"] == plan["event"] and run["path"] == plan["workflow"]
@@ -126,10 +160,20 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
     ended = max(worklog.instant(j["completed_at"]) for j in actual)
     worklog.require(worklog.instant(observed) >= ended, "CI observation precedes completion")
     worklog.require(digest(plan_path) == plan_sha, "CI plan changed during execution")
+    wall, python_cpu = time.perf_counter() - started, time.process_time() - cpu_started
+    gh_cpu = child_cpu() - child_started
+    external_non_cpu = max(0.0, cli_wall - cli_python_cpu - gh_cpu)
+    profile = {"wall_seconds": wall, "python_cpu_seconds": python_cpu, "gh_cpu_seconds": gh_cpu,
+               "cli_wall_seconds": cli_wall, "cli_non_cpu_seconds": external_non_cpu,
+               "poll_sleep_seconds": sleep_wall, "api_calls": api_calls, "poll_interval_seconds": 5,
+               "other_non_cpu_seconds": max(0.0, wall - python_cpu - gh_cpu - external_non_cpu - sleep_wall),
+               "limit": "CLI non-CPU includes network, process startup and scheduling; not pure network time. Remote CI CPU is unobserved."}
+    save(directory / "ci-profile.json", profile)
     facts = {"state": "CI_VALIDATION_COLLECTED", "validation_passed": True, "repo": repo,
              "run_id": run_id, "sha": sha, "url": run["html_url"], "event": plan["event"],
              "ci_finished_at": ended.isoformat(), "observed_at": observed,
              "collected_at": datetime.now(timezone.utc).isoformat(), "jobs": jobs,
+             "profile": profile,
              "evidence": [worklog.evidence(directory / name) for name in ("ci-run.json", "ci-jobs.json")],
              "plan_sha256": plan_sha, "human_review": "pending", "authorization_granted": False}
     save(output, facts)
