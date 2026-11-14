@@ -39,6 +39,12 @@ if (plan.mode === 'server-local') {
 }
 if (plan.mode === 'close') {
   if (!/^[a-f0-9]{32}$/.test(plan.event_id)) throw new Error('INVALID_EVENT_ID')
+  if (plan.session_id !== undefined) {
+    if (!Number.isSafeInteger(plan.session_id) || plan.session_id <= 0) throw new Error('INVALID_SESSION_ID')
+    let r = {session_id: plan.session_id}
+    while (r.session_id) r = await tools.write_stdin({session_id: r.session_id, chars: '', max_output_tokens: 1600, yield_time_ms: 30000})
+    if (r.exit_code !== 0) return {state: 'FINALIZATION_BLOCKED', exit_code: r.exit_code}
+  }
   const status = await cli(`${helper} close-check ${shell(plan.directory)} --event-id ${shell(plan.event_id)}`)
   if (status.state !== 'READY_TO_FINISH') return status // Never ack notices or close on uncertainty.
   if (plan.complete_goal === true) await tools.update_goal({status: 'complete'})

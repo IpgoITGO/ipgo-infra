@@ -140,3 +140,17 @@ node --test scripts/deployment/test_code_mode_flow.cjs
 GitHub jobs API로 관측할 수 없으며 job 경과시간과 구분합니다. 5초는 조회 간격이며 API 응답/공개
 지연까지 포함한 감지 상한을 보장하지 않습니다. 요청당 30초/전체 30분 제한을 두고 API 오류는
 원본을 보존한 뒤 중단합니다. 성공 polling을 자동 재시도 실패로 세지 않으며 실패 요청을 재전송하지 않습니다.
+
+
+## CI 시작 전에 마감 연결
+
+기존 close 모드에 실행 중인 `session_id`를 선택적으로 전달하면 같은 실행 종료를 연속 대기한 뒤
+close-check→알림 확인→Goal→원장 종료를 연결합니다. CI/문서 기록 프로세스를 시작한 직후
+이 모드를 등록하며 종료 뒤 새 마감 코드를 작성하지 않습니다. 종료 코드 실패·미완료 증거·
+미안내 알림이 있으면 기존처럼 중단합니다. close-check는 실제 시작/확인 시각과 소요도 반환합니다.
+
+`session.py merge-guard DIRECTORY --snapshot SNAPSHOT --plan PLAN`은 판단 전에 원본을 새 파일로
+보존합니다. plan에는 sha·author·checks를, snapshot에는 PR 메타데이터·전체 CI와 threads
+(nodes/pageInfo)를 넣습니다. 실패 결과에는 HEAD_CHANGED·MERGE_STATE·APPROVAL·CHECK_RESULT
+등 조건별 실제/기대값과 원본 hash가 남습니다. 성공해도 승인/병합은 수행하지 않으며 별도의
+기존 승인과 정확 head를 지정한 일반 병합이 필요합니다. 과거 실패를 새 성공으로 덮어쓰지 않습니다.
