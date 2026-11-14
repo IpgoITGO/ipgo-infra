@@ -78,6 +78,9 @@ timing-bundle은 실제 started_at/finished_at/provenance, server/ai 각각의 r
 python3 -m unittest discover -s scripts/deployment -p 'test_*.py' -v
 ```
 
+`python3 scripts/deployment/test_session.py`로 인계·로컬 검증·마감 보호 검사를 직접 실행할 수도 있습니다.
+파일 끝의 진입점이 모든 검사 정의 뒤에 있어 직접 실행과 해당 파일 discovery가 같은 검사를 실행합니다.
+
 테스트는 합성 AWS/JSON만 사용한다. 새 CI job도 자격 증명이나 AWS/DB 접속 없이 실행한다.
 
 ## 로컬 서버 검증과 작업 마감
