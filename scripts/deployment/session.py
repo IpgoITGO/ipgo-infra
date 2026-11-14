@@ -54,8 +54,26 @@ def close_check(directory, event_id, runner=subprocess.run):
     worklog.require(not (directory / "summary.json").exists(), "summary already exists")
     receipt_path = directory / "router-closed.json"
     worklog.require(re.fullmatch(r"[a-f0-9]{32}", event_id), "invalid event id")
+    commands = []
     def call(args):
-        response = runner(args, capture_output=True, text=True, check=True)
+        before, cpu_before = time.perf_counter(), time.process_time()
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        child_before = usage.ru_utime + usage.ru_stime
+        try:
+            response = runner(args, capture_output=True, text=True, check=True)
+        except subprocess.SubprocessError as error:
+            save(directory / f"close-command-{time.time_ns()}.json", {
+                "command": args[1], "error": str(error),
+                "stdout": str(getattr(error, "stdout", "") or ""),
+                "stderr": str(getattr(error, "stderr", "") or "")})
+            raise
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        raw = directory / f"close-command-{time.time_ns()}.json"
+        save(raw, {"command": args[1], "stdout": response.stdout, "stderr": response.stderr})
+        commands.append({"command": args[1], "wall_seconds": time.perf_counter() - before,
+                         "python_cpu_seconds": time.process_time() - cpu_before,
+                         "child_cpu_seconds": usage.ru_utime + usage.ru_stime - child_before,
+                         "evidence": worklog.evidence(raw)})
         return json_lines(response.stdout)
     if receipt_path.exists():
         cached = read(receipt_path)
@@ -80,6 +98,7 @@ def close_check(directory, event_id, runner=subprocess.run):
     status = {"state": "OUTPUT_NOTICE_PENDING" if pending else "READY_TO_FINISH",
             "started_at": started_at, "checked_at": datetime.now(timezone.utc).isoformat(),
             "duration_seconds": time.perf_counter() - started,
+            "commands": commands,
             "notices": report, "journal_closed": False, "authorization_granted": False}
     save(directory / f"close-check-{time.time_ns()}.json", status)
     return status

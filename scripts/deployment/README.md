@@ -155,3 +155,13 @@ close-check→알림 확인→Goal→원장 종료를 연결합니다. CI/문서
 (nodes/pageInfo)를 넣습니다. 실패 결과에는 HEAD_CHANGED·MERGE_STATE·APPROVAL·CHECK_RESULT
 등 조건별 실제/기대값과 원본 hash가 남습니다. 성공해도 승인/병합은 수행하지 않으며 별도의
 기존 승인과 정확 head를 지정한 일반 병합이 필요합니다. 과거 실패를 새 성공으로 덮어쓰지 않습니다.
+
+
+## 필수 마감 확인과 게시의 겹침
+
+마감의 desktop-finish와 output-report --refresh는 모두 유지합니다. `close-check`의 commands에는
+실제 호출한 명령별 wall·Python/자식 CPU·원본 stdout/stderr hash를 남깁니다. 이 wall에는
+관측 수집·디스크·스케줄링이 섞여 있으므로 전부 순수 연산 또는 불필요한 시간으로 해석하지 않습니다.
+이미 결과가 확정된 도구 PR의 게시·정리는 실제 업무 CI가 실행 중일 때 끝내고, 해당 실제 PR의
+최종 성공 결과는 CI 종료 후 게시합니다. 고정된 소스/검사 정의는 바꾸지 않으며 총 시간과 CI 뒤
+시간을 함께 비교해 단순히 다른 단계로 옮긴 시간을 단축으로 계산하지 않습니다.
