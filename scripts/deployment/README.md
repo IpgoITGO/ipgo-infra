@@ -150,6 +150,8 @@ close-check→알림 확인→Goal→원장 종료를 연결합니다. CI/문서
 이 모드를 등록하며 종료 뒤 새 마감 코드를 작성하지 않습니다. 종료 코드 실패·미완료 증거·
 미안내 알림이 있으면 기존처럼 중단합니다. close-check는 실제 시작/확인 시각과 소요도 반환합니다.
 
+snapshot과 plan의 최상위는 JSON object여야 하며, 다른 형식은 원본을 보존하고 구체 형식 사유와 함께 차단합니다.
+
 `session.py merge-guard DIRECTORY --snapshot SNAPSHOT --plan PLAN`은 판단 전에 원본을 새 파일로
 보존합니다. plan에는 sha·author·checks를, snapshot에는 PR 메타데이터·전체 CI와 threads
 (nodes/pageInfo)를 넣습니다. 실패 결과에는 HEAD_CHANGED·MERGE_STATE·APPROVAL·CHECK_RESULT
