@@ -146,6 +146,18 @@ class CloseTests(unittest.TestCase):
                 self.assertEqual(session.close_check(directory, "a" * 32, runner)["state"], "OUTPUT_NOTICE_PENDING")
             self.assertEqual(calls, ["desktop-finish", "output-report", "output-report"])
             self.assertFalse((directory / "summary.json").exists())
+            reports = sorted(directory.glob("close-check-*.json"))
+            self.assertEqual(len(reports), 2)
+            first, second = [session.read(p) for p in reports]
+            self.assertEqual([c["command"] for c in first["commands"]], ["desktop-finish", "output-report"])
+            self.assertEqual([c["command"] for c in second["commands"]], ["output-report"])
+            for report in (first, second):
+                for command in report["commands"]:
+                    self.assertGreaterEqual(command["wall_seconds"], 0)
+                    self.assertGreaterEqual(command["python_cpu_seconds"], 0)
+                    self.assertGreaterEqual(command["child_cpu_seconds"], 0)
+                    self.assertTrue(Path(command["evidence"]["path"]).is_file())
+
 
 
 if __name__ == "__main__":
