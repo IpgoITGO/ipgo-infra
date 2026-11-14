@@ -3,6 +3,8 @@ import asyncio
 import copy
 import json
 import tempfile
+import subprocess
+import worklog
 import unittest
 from pathlib import Path
 
@@ -75,5 +77,74 @@ class SessionTests(unittest.TestCase):
             with self.assertRaises(FileExistsError): session.save(path, "overwrite history")
 
 
+
+class LocalServerTests(unittest.TestCase):
+    def local_fixture(self, root):
+            directory, tree = root / 'packet', root / 'tree'
+            directory.mkdir(); tree.mkdir()
+            (tree / 'app.java').write_text('fixed source')
+            session.save(directory / 'final-source-hashes.json', {'app.java': session.digest(tree / 'app.java')})
+            (directory / 'java-finished.txt').write_text('2026-11-14T11:00:00+00:00')
+            xml = tree / 'build/test-results/test'; xml.mkdir(parents=True)
+            (xml / 'TEST-fixture.xml').write_text('<testsuite tests="2" failures="0" errors="0" skipped="0"/>')
+            jar = tree / 'build/libs'; jar.mkdir()
+            (jar / 'app.jar').write_bytes(b'synthetic fixture')
+            return directory, tree
+
+    def test_server_complete_collects_once_and_requires_human_review(self):
+            with tempfile.TemporaryDirectory() as temp:
+                directory, tree = self.local_fixture(Path(temp))
+                result = session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 0, 0)
+                self.assertEqual(result['junit']['tests'], 2)
+                self.assertEqual(result['human_review'], 'pending')
+                self.assertFalse(result['authorization_granted'])
+                self.assertTrue((directory / 'final-xml/TEST-fixture.xml').exists())
+                original = (directory / 'server-validation.json').read_bytes()
+                with self.assertRaises(ValueError):
+                    session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 0, 0)
+                self.assertEqual((directory / 'server-validation.json').read_bytes(), original)
+
+    def test_server_complete_rejects_failed_exit_or_changed_source(self):
+            with tempfile.TemporaryDirectory() as temp:
+                directory, tree = self.local_fixture(Path(temp))
+                with self.assertRaises(ValueError):
+                    session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 1, 0)
+                (tree / 'app.java').write_text('changed source')
+                with self.assertRaises(ValueError):
+                    session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 0, 0)
+                self.assertFalse((directory / 'server-validation.json').exists())
+
+    def test_server_complete_rejects_bad_xml_or_missing_jar(self):
+            for invalid in ('xml', 'jar'):
+                with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as temp:
+                    directory, tree = self.local_fixture(Path(temp))
+                    if invalid == 'xml':
+                        (tree / 'build/test-results/test/TEST-fixture.xml').write_text(
+                            '<testsuite tests="2" failures="1" errors="0" skipped="0"/>')
+                    else:
+                        (tree / 'build/libs/app.jar').unlink()
+                    with self.assertRaises(ValueError):
+                        session.server_complete(directory, tree, '2026-11-14T11:00:01+00:00', 0, 0)
+                    self.assertFalse((directory / 'server-validation.json').exists())
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloseTests(unittest.TestCase):
+    def test_close_preserves_notices_and_reuses_confirmed_router_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "private"
+            worklog.start(directory, "synthetic-close", provenance="synthetic")
+            worklog.record(directory, "stage", stage="finalization", kind="work", outcome="completed", reason=None, target=None)
+            session.save(directory / "completion.json", {"validation_passed": True})
+            calls = []
+            def runner(args, **kwargs):
+                calls.append(args[1])
+                value = {"event_id": "a" * 32, "status": "success", "validation": "passed"} if args[1] == "desktop-finish" else {
+                    "pending_notices": ["synthetic"], "new_notices": [], "pending_notice_count": 1, "failed_refreshes": 0}
+                return subprocess.CompletedProcess(args, 0, json.dumps(value), "")
+            for _ in range(2):
+                self.assertEqual(session.close_check(directory, "a" * 32, runner)["state"], "OUTPUT_NOTICE_PENDING")
+            self.assertEqual(calls, ["desktop-finish", "output-report", "output-report"])
+            self.assertFalse((directory / "summary.json").exists())
