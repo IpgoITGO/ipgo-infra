@@ -144,3 +144,7 @@ class CiCompleteTests(unittest.TestCase):
             sleep.assert_not_called()
             self.assertEqual(len(calls), 1)
             self.assertTrue((directory / "ci-run.json").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
