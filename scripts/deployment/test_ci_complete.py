@@ -109,7 +109,7 @@ class CiCompleteTests(unittest.TestCase):
             self.assertNotIn("usage:", result.stderr)
 
 
-    def test_running_ci_waits_five_seconds_and_fetches_jobs_only_once(self):
+    def test_running_ci_respects_start_interval_and_fetches_jobs_only_once(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp) / "packet"
@@ -126,7 +126,9 @@ class CiCompleteTests(unittest.TestCase):
                 return result
             with patch.object(session.time, "sleep") as sleep:
                 facts = session.ci_complete(directory, plan, pending)
-            sleep.assert_called_once_with(5)
+            sleep.assert_called_once()
+            self.assertGreater(sleep.call_args.args[0], 0)
+            self.assertLessEqual(sleep.call_args.args[0], 2)
             self.assertEqual(len(calls), 3)
             self.assertEqual(sum("/jobs?" in c[2] for c in calls), 1)
             profile = facts["profile"]
@@ -145,6 +147,33 @@ class CiCompleteTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertTrue((directory / "ci-run.json").exists())
 
+
+    def test_slow_request_does_not_add_sleep_and_queue_keeps_five_second_period(self):
+        from unittest.mock import patch
+        for state, duration, delay in [("in_progress", 3.5, None), ("queued", 1.0, 4.0)]:
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as temp:
+                directory=Path(temp)/"packet";plan,runner,calls=self.fixture(directory)
+                clock=[0.0];reads=0
+                def timed(args, **kwargs):
+                    nonlocal reads
+                    result=runner(args, **kwargs)
+                    if "/jobs?" not in args[2]:
+                        reads+=1;clock[0]+=duration
+                        if reads==1:
+                            data=json.loads(result.stdout);data.update(status=state,conclusion=None);result.stdout=json.dumps(data)
+                    return result
+                def sleeping(seconds):clock[0]+=seconds
+                with patch.object(session.time,"perf_counter",side_effect=lambda:clock[0]),patch.object(session.time,"sleep",side_effect=sleeping) as sleep:
+                    facts=session.ci_complete(directory,plan,timed)
+                if delay is None:sleep.assert_not_called()
+                else:sleep.assert_called_once_with(delay)
+                self.assertEqual(facts["profile"]["api_calls"],3)
+                requests=session.read(directory/"ci-requests.json")
+                self.assertEqual(len(requests),3)
+                self.assertEqual(requests[0]["wall_seconds"],duration)
+                first=json.loads((directory/"ci-watch.log").read_text().splitlines()[0])
+                self.assertEqual(first["next_delay_seconds"],delay or 0.0)
+                self.assertTrue(all("started_at" in r and "finished_at" in r for r in requests))
 
 if __name__ == "__main__":
     unittest.main()

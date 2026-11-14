@@ -195,9 +195,11 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
     child_started = child_cpu()
     cli_wall = cli_python_cpu = sleep_wall = 0.0
     api_calls = 0
+    requests = []
     def get(suffix):
         nonlocal cli_wall, cli_python_cpu, api_calls
         before, cpu_before = time.perf_counter(), time.process_time()
+        requested_at = datetime.now(timezone.utc).isoformat()
         api_calls += 1
         try:
             response = runner(["gh", "api", f"repos/{repo}/actions/runs/{run_id}{suffix}"],
@@ -209,9 +211,12 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
                  "stderr": str(getattr(error, "stderr", "") or "")})
             raise
         finally:
-            cli_wall += time.perf_counter() - before
+            duration = time.perf_counter() - before
+            cli_wall += duration
             cli_python_cpu += time.process_time() - cpu_before
-    # 상태만 5초 간격으로 읽는다. jobs 원본은 완료 뒤 한 번만 수집한다.
+            requests.append({"kind": "jobs" if suffix else "run", "started_at": requested_at,
+                             "finished_at": datetime.now(timezone.utc).isoformat(), "wall_seconds": duration})
+    # 시작~시작 간격: 실행 중2초/대기열5초. jobs는 완료 뒤 한 번만 수집한다.
     with (directory / "ci-watch.log").open("x", encoding="utf-8") as stream:
         os.chmod(stream.name, 0o600)
         while True:
@@ -220,15 +225,19 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
             run = get("")
             identity = (run["id"] == run_id and run["head_sha"] == sha and run["head_branch"] == branch
                         and run["event"] == plan["event"] and run["path"] == plan["workflow"])
+            period = 2 if run["status"] == "in_progress" else 5
+            delay = 0.0 if not identity or run["status"] == "completed" else max(0.0, period - requests[-1]["wall_seconds"])
             stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "status": run["status"],
-                                     "conclusion": run["conclusion"], "identity_valid": identity}) + "\n")
+                                     "conclusion": run["conclusion"], "identity_valid": identity,
+                                     "request": requests[-1], "next_delay_seconds": delay}) + "\n")
             stream.flush()
             if not identity or run["status"] == "completed":
                 save(directory / "ci-run.json", run)
                 worklog.require(identity, "CI identity mismatch")
                 break
             before = time.perf_counter()
-            time.sleep(5)
+            if delay:
+                time.sleep(delay)
             sleep_wall += time.perf_counter() - before
     observed = datetime.now(timezone.utc).isoformat()
     worklog.require(run["conclusion"] == "success", "CI failed")
@@ -250,10 +259,13 @@ def ci_complete(directory, plan_path, runner=subprocess.run):
     external_non_cpu = max(0.0, cli_wall - cli_python_cpu - gh_cpu)
     profile = {"wall_seconds": wall, "python_cpu_seconds": python_cpu, "gh_cpu_seconds": gh_cpu,
                "cli_wall_seconds": cli_wall, "cli_non_cpu_seconds": external_non_cpu,
-               "poll_sleep_seconds": sleep_wall, "api_calls": api_calls, "poll_interval_seconds": 5,
+               "poll_sleep_seconds": sleep_wall, "api_calls": api_calls, "poll_interval_seconds": 2,
+               "queued_poll_interval_seconds": 5,
+               "max_request_seconds": max(r["wall_seconds"] for r in requests),
                "other_non_cpu_seconds": max(0.0, wall - python_cpu - gh_cpu - external_non_cpu - sleep_wall),
                "limit": "CLI non-CPU includes network, process startup and scheduling; not pure network time. Remote CI CPU is unobserved."}
     save(directory / "ci-profile.json", profile)
+    save(directory / "ci-requests.json", requests)
     facts = {"state": "CI_VALIDATION_COLLECTED", "validation_passed": True, "repo": repo,
              "run_id": run_id, "sha": sha, "url": run["html_url"], "event": plan["event"],
              "ci_finished_at": ended.isoformat(), "observed_at": observed,
