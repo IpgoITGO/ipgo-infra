@@ -104,3 +104,28 @@ node --test scripts/deployment/test_code_mode_flow.cjs
 ```
 
 이 검사는 합성 도구 응답만 사용합니다. 통과 자체가 실제 업무 시간 단축이나 배포 승인을 뜻하지 않습니다.
+
+
+## GitHub CI 회수부터 기록 단계까지
+
+`session.py ci-complete DIRECTORY --plan DIRECTORY/ci-plan.json`은 기존 실행을 기다리는
+읽기 전용 호출입니다. CLI 인자를 매번 조립하지 않고 아래 계획을 사용합니다.
+
+```json
+{"repo":"IpgoITGO/ipgo-server","run_id":123,"sha":"검토한40자리SHA",
+ "branch":"dev","event":"push","workflow":".github/workflows/test.yml",
+ "jobs":["deploy-contract","test","container","arm-test"]}
+```
+
+원장을 validation 단계로 전환한 후 실행합니다. `gh run watch --exit-status --interval 30`과
+REST run/jobs 조회만 사용하며 dispatch·merge·승인·배포를 호출하지 않습니다.
+정확 SHA·branch·event·workflow·필수 job 집합과 모든 성공 상태를 확인합니다.
+누락·추가 job·skip·실패·계획 변경은 거부하며 원본/실패 로그를 덮어쓰지 않습니다.
+필수 workflow가 여러 개면 각각의 근거가 필요하며 이 단일 run 영수증으로 대체하지 않습니다.
+
+성공 시 보호된 run/jobs 원본과 `ci-validation.json`을 보존하고 같은 실행에서 documentation으로
+전환합니다. 사람 검토와 승인, 전체 업무 완료는 별도입니다. Code Mode에서는 기존 본문에
+`mode: 'github-ci'`와 `tools_directory`, `directory`만 전달하면 같은 실행 handle을 연속 대기합니다.
+결과 정본은 `completion.json`, PR/상태 문서는 짧은 결과와 근거 링크만 사용합니다.
+마감은 기존 `mode: 'close'`로 알림 확인→Goal→원장 종료를 이어서 처리합니다.
+쓰기 직전 fresh 확인과 병합 뒤 정확 SHA 검증은 생략하지 않습니다.

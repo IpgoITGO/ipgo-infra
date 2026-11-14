@@ -1,4 +1,4 @@
-"""로컬 증거 조립·단계 인계·시간 보고. 네트워크/배포/승인 전송 없음."""
+"""로컬 증거·시간 기록과 GitHub CI 읽기. 배포·승인 전송 없음."""
 import argparse
 import hashlib
 import json
@@ -76,6 +76,66 @@ def close_check(directory, event_id, runner=subprocess.run):
     pending = bool(report["pending_notices"] or report["new_notices"] or report["pending_notice_count"])
     return {"state": "OUTPUT_NOTICE_PENDING" if pending else "READY_TO_FINISH",
             "notices": report, "journal_closed": False, "authorization_granted": False}
+
+def ci_complete(directory, plan_path, runner=subprocess.run):
+    """고정된 읽기 전용 CLI로 같은 CI를 기다려 검증하고 기록 단계로 전환한다."""
+    directory, plan_path = Path(directory), Path(plan_path)
+    worklog.evidence(plan_path)
+    plan = read(plan_path)
+    plan_sha = digest(plan_path)
+    repo, run_id, sha = plan["repo"], plan["run_id"], plan["sha"]
+    jobs = plan["jobs"]
+    worklog.require(isinstance(repo, str) and re.fullmatch(r"[\w.-]+/[\w.-]+", repo), "invalid repository")
+    worklog.require(type(run_id) is int and run_id > 0 and isinstance(sha, str)
+                    and re.fullmatch(r"[a-f0-9]{40}", sha), "invalid run or SHA")
+    branch = plan["branch"]
+    worklog.require(isinstance(branch, str) and ((plan["event"] == "push" and branch == "dev")
+                    or (plan["event"] == "pull_request" and re.fullmatch(r"feature/[A-Za-z0-9_./-]+", branch)))
+                    and plan["workflow"] in (".github/workflows/test.yml", ".github/workflows/terraform-check.yml"),
+                    "unsupported CI boundary")
+    worklog.require(isinstance(jobs, list) and jobs and all(isinstance(j, str) and 0 < len(j) <= 120
+                    and not any(ord(c) < 32 for c in j) for j in jobs) and len(set(jobs)) == len(jobs),
+                    "expected jobs required")
+    events = worklog.transact(directory, lambda _: None)
+    stage = next(e for e in reversed(events) if e["type"] in ("start", "stage"))
+    worklog.require(stage["stage"] == "validation", "validation stage required")
+    output = directory / "ci-validation.json"
+    worklog.require(not output.exists(), "existing CI receipt")
+    # 배포/dispatch/승인/merge 호출은 없다. 실패 로그도 덮어쓰지 않는다.
+    with (directory / "ci-watch.log").open("x", encoding="utf-8") as stream:
+        os.chmod(stream.name, 0o600)
+        runner(["gh", "run", "watch", str(run_id), "--repo", repo, "--exit-status", "--interval", "30"],
+               stdout=stream, stderr=subprocess.STDOUT, text=True, check=True)
+    observed = datetime.now(timezone.utc).isoformat()
+    def get(suffix, filename):
+        response = runner(["gh", "api", f"repos/{repo}/actions/runs/{run_id}{suffix}"],
+                          capture_output=True, text=True, check=True)
+        value = json.loads(response.stdout)
+        save(directory / filename, value)
+        return value
+    run = get("", "ci-run.json")
+    result = get("/jobs?per_page=100", "ci-jobs.json")
+    actual = result["jobs"]
+    worklog.require(run["id"] == run_id and run["head_sha"] == sha and run["head_branch"] == plan["branch"]
+                    and run["event"] == plan["event"] and run["path"] == plan["workflow"]
+                    and run["status"] == "completed" and run["conclusion"] == "success", "CI identity or result mismatch")
+    worklog.require(result["total_count"] == len(actual) == len(jobs)
+                    and {j["name"] for j in actual} == set(jobs)
+                    and all(j["status"] == "completed" and j["conclusion"] == "success" for j in actual),
+                    "missing, extra, skipped or failed CI job")
+    ended = max(worklog.instant(j["completed_at"]) for j in actual)
+    worklog.require(worklog.instant(observed) >= ended, "CI observation precedes completion")
+    worklog.require(digest(plan_path) == plan_sha, "CI plan changed during execution")
+    facts = {"state": "CI_VALIDATION_COLLECTED", "validation_passed": True, "repo": repo,
+             "run_id": run_id, "sha": sha, "url": run["html_url"], "event": plan["event"],
+             "ci_finished_at": ended.isoformat(), "observed_at": observed,
+             "collected_at": datetime.now(timezone.utc).isoformat(), "jobs": jobs,
+             "evidence": [worklog.evidence(directory / name) for name in ("ci-run.json", "ci-jobs.json")],
+             "plan_sha256": plan_sha, "human_review": "pending", "authorization_granted": False}
+    save(output, facts)
+    worklog.record(directory, "stage", stage="documentation", kind="work", outcome="completed", reason=None, target=None)
+    return facts
+
 
 def server_complete(directory, worktree, observed_at, java_exit, python_exit):
     directory, worktree = Path(directory), Path(worktree).resolve()
@@ -199,6 +259,9 @@ def main():
     close = sub.add_parser("close-check")
     close.add_argument("directory", type=Path)
     close.add_argument("--event-id", required=True)
+    ci = sub.add_parser("ci-complete")
+    ci.add_argument("directory", type=Path)
+    ci.add_argument("--plan", type=Path, required=True)
     server = sub.add_parser("server-complete")
     server.add_argument("directory", type=Path)
     server.add_argument("--worktree", type=Path, required=True)
@@ -207,7 +270,9 @@ def main():
     server.add_argument("--python-exit", type=int, required=True)
     args = parser.parse_args()
     try:
-        if args.command == "server-complete":
+        if args.command == "ci-complete":
+            result = ci_complete(args.directory, args.plan)
+        elif args.command == "server-complete":
             result = server_complete(args.directory, args.worktree, args.observed_at, args.java_exit, args.python_exit)
         elif args.command == "close-check":
             result = close_check(args.directory, args.event_id)

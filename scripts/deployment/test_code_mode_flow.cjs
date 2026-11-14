@@ -8,6 +8,23 @@ const source = fs.readFileSync(path.join(__dirname, 'code-mode-flow.js'), 'utf8'
 const execute = new AsyncFunction('tools', 'plan', 'setTimeout', source)
 const plan = {directory: '/workspace/.private/synthetic-flow', tools_directory: '/workspace/infra/scripts/deployment'}
 
+test('GitHub CI uses fixed plan and continuously collects before returning', async () => {
+  const calls = []
+  const tools = {
+    async exec_command({cmd}) {
+      calls.push(cmd)
+      assert.ok(cmd.includes(' ci-complete ')); assert.ok(cmd.includes("--plan '/workspace/.private/synthetic-flow/ci-plan.json'"))
+      return {session_id: 19, output: ''}
+    },
+    async write_stdin({session_id}) {
+      assert.equal(session_id, 19)
+      return {exit_code: 0, output: '{"state":"CI_VALIDATION_COLLECTED"}'}
+    },
+  }
+  assert.equal((await execute(tools, {...plan, mode: 'github-ci'})).state, 'CI_VALIDATION_COLLECTED')
+  assert.equal(calls.length, 1)
+})
+
 test('local server continuously waits, collects and enters documentation without a model turn', async () => {
   const order = []; let polls = 0
   const tools = {
@@ -54,3 +71,10 @@ for (const pending of [true, false]) {
     assert.deepEqual(order, pending ? ['check'] : ['check', 'goal', 'finish'])
   })
 }
+
+
+test('GitHub CI command failure cannot report success or finalize', async () => {
+  const tools = {async exec_command() {return {exit_code: 2, output: '{"state":"BLOCKED"}'}},
+    async update_goal() {throw new Error('MUST_NOT_FINALIZE')}}
+  await assert.rejects(execute(tools, {...plan, mode: 'github-ci'}), /LOCAL_COMMAND_FAILED/)
+})

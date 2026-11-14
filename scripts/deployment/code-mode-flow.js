@@ -15,6 +15,10 @@ const cli = async command => {
 if (!/^\/[^\n\0]+\/\.private\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(plan.directory)) throw new Error('PRIVATE_DIRECTORY_REQUIRED')
 const helper = `python3 ${shell(root + '/session.py')}`
 const journal = `python3 ${shell(root + '/worklog.py')}`
+if (plan.mode === 'github-ci') {
+  // Validated identity/job list stays in the private packet; no PR diff or logs in model output.
+  return await cli(`${helper} ci-complete ${shell(plan.directory)} --plan ${shell(plan.directory + '/ci-plan.json')}`)
+}
 if (plan.mode === 'server-local') {
   if (!Number.isSafeInteger(plan.session_id) || plan.session_id <= 0 ||
       typeof plan.worktree !== 'string' || !plan.worktree.startsWith('/') || /[\n\0]/.test(plan.worktree)) throw new Error('INVALID_SERVER_PLAN')
