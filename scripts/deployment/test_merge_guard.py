@@ -76,5 +76,15 @@ class MergeGuardTests(unittest.TestCase):
                     self.assertEqual(json.loads(Path(result["input"]["path"]).read_text())[target],value)
                     self.assertEqual(len(list(directory.glob("merge-guard-*-result.json"))),1)
 
+    def test_null_or_malformed_ci_checks_are_explicitly_blocked(self):
+        for value in (None, {}, [None], ["bad"]):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as temp:
+                directory=Path(temp);snapshot=self.fixture();snapshot["statusCheckRollup"]=value
+                result=self.run_guard(directory,snapshot)
+                self.assertEqual(result["state"],"BLOCKED")
+                self.assertIn("CHECKS_TYPE",[r["code"] for r in result["reasons"]])
+                self.assertEqual(json.loads(Path(result["input"]["path"]).read_text())["snapshot"]["statusCheckRollup"],value)
+                self.assertEqual(len(list(directory.glob("merge-guard-*-result.json"))),1)
+
 if __name__=="__main__":
     unittest.main()

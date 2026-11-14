@@ -147,6 +147,9 @@ def merge_guard(directory, snapshot_path, plan_path):
     elif any(x.get("isResolved") is not True for x in threads["nodes"]):
         reasons.append({"code": "UNRESOLVED_REVIEW"})
     checks, expected = snapshot.get("statusCheckRollup", []), plan.get("checks", [])
+    if not isinstance(checks, list) or not all(isinstance(x, dict) for x in checks):
+        reasons.append({"code": "CHECKS_TYPE", "expected": "array of objects", "observed": type(checks).__name__})
+        checks = []
     if not isinstance(expected, list) or not all(isinstance(x, str) for x in expected):
         reasons.append({"code": "INVALID_PLAN_CHECKS"})
         expected = []
