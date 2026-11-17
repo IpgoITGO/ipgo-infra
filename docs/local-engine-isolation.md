@@ -1,9 +1,46 @@
 # DA-01 로컬 연동 시험 격리·접근 계약
 
-상태: **계약안 검토 단계 / 환경 미구축·연동 시험 미실행**.
+상태: **독립 로컬 r4 구성·정제/계산/실패·비간섭 수용 확인 (2026-11-17)**.
 관련 작업: [Infra #68](https://github.com/IpgoITGO/ipgo-infra/issues/68) →
 [AI #57](https://github.com/IpgoITGO/ipgo-ai/issues/57).
 문서 반영과 실제 격리 구축·연동 성공은 별도로 판단한다.
+
+## 승인된 구성과 실제 수용
+
+2026-11-17 사용자 승인으로 독립 로컬 시험을 실행했다. 업무 환경 A는 PostgreSQL18.7,
+Moto5.1.22의 SQS 호환 jobs/results, 원본 파일 트리, Spring·AI embedded worker를 사용했다.
+보호 환경 B는 별도 DB·브로커·큐·Docker internal network였다. 실제 AWS 자원을 만들거나
+개발 DB·큐·Secret을 연결하지 않았다. 모델은 고정 LGBM19, 5+14일, BUFFER100_FLOOR0이다.
+
+| 경계 | 승인 구성·실제 근거 |
+|---|---|
+| DB | A/B database와 볼륨 독립. A에 Server migration 전체 적용, Server는 ipgo_server, AI는 default_transaction_read_only가 설정된 ipgo_ai_reader와 승인 view만 사용 |
+| 메시지 | A/B의 Moto 프로세스와 큐 쌍 분리, MaximumMessageSize=1048576. Server와 AI endpoint·두 큐 URL 일치. SDK 가짜 인증값만 사용 |
+| 원본 | Server 전용 시험 트리 쓰기, AI 동일 트리 ro mount. 파일 모드여서 S3 bucket 미설정. DB 원본 모드는 이번 수용 제외 |
+| 네트워크 | 환경마다 internal network. A에서 외부443·B DB5432·B broker5000 접근 차단 확인. 실제 AWS 접근 권한/인증값 없음 |
+| dispatcher | Server ca08aa3 및 현재 dev 7c84464의 EngineJobs.due/claim·EngineTransport.tick에 환경 소유권 필터 없음. 따라서 큐 분리만으로 충분하지 않고 독립 업무 DB가 필수 |
+| 처리 | 정상 CLEAN→Spring DONE/attempt1, 잘못된 XLSX→INVALID_SOURCE/FAILED/attempt1, 별도 CALCULATE→LGBM19 DONE/결과1. A/B 계산·유료 LLM0 |
+| 비간섭 | B DB 전후 지문 및 jobs/results canary payload 지문 동일. 관측기의 receive1/changeVisibility0 효과를 별도 기록. 공유 개발 환경 전체의 불변 시험으로 확대하지 않음 |
+| 화면 | r4의 첫 UI는 정적 자산 권한 때문에403으로 실패. 동일 bytes 권한을 수정한 UI2에서 정지된 DB의 읽기 전용 물리 복사본을 사용해5페이지17검사 통과. 새 업로드/계산 없이 API·브라우저 경계만 확인 |
+
+검증 코드 고정본은 AI bf05c6edb0a1f266f22594157db47ef00fbf5275,
+Server ca08aa3b0aa676ac05efb62a58837cbf6ca0bfd9,
+Client 5baaf6edd63eb9b55fc8953dc23f53344b0fddfe다.
+실제 worker·DB·Spring 저장 수용과 UI 후처리를 합성 단위 검사나 실제 AWS 검증으로 세지 않는다.
+이전 r1/r2/r3/r4 UI1 실패 원본도 보존한다. 상세 실행 식별자는 AI #57의 수용 원장에 연결한다.
+
+## 재현·보존·정리 책임
+
+- 새 환경 구축은 [AI 로컬 worker 안내](https://github.com/IpgoITGO/ipgo-ai/blob/dev/docs/local-worker.md)의
+  빈 DB→role/migration/view→브로커/원본→Server/AI→수용→중지 순서를 따른다.
+- Infra는 격리·접근 계약과 실제 구축/수용 상태를, Server는 migration·최소 role/view와
+  dispatcher 검토·저장을, AI는 worker·결과 발행·실행 안내를 관리한다.
+- 시험 실행자가 자신이 만든 컨테이너만 stop하고 목록·코드 SHA·로그·DB 지문·결과를 보존한다.
+  현재 r4/UI2 컨테이너는 중지했으며 볼륨·네트워크·실패 원본은 보존했다.
+- 컨테이너/볼륨 삭제와 보호 환경 변경은 별도 승인 대상으로 남긴다. 자동 prune, 공유 DB migration,
+  기존 큐 purge, 개발 Secret 제거는 재현 절차에 포함하지 않는다.
+- 이 문서 갱신은 과거 승인된 로컬 경계를 확정하는 기록이다. AWS/IAM/Secret 변경이나
+  모델 설명 활성화를 수행하지 않는다. 새 실제 연동이 필요하면 대상·입력·횟수·비용·복구를 먼저 고정한다.
 
 ## 목적과 범위
 
