@@ -47,7 +47,7 @@ CNAME을 유지한다. 인증서는 ACM이 갱신하므로 호스트에 인증�
 | CPU 과금 | Standard credit, 상세 모니터링 꺼짐 |
 | 앱 | `ipgo-dev-onebox-server`, bridge 8080, 메모리 448MiB |
 | JVM | heap 128MiB, SerialGC, Tomcat 최대 16 threads, DB pool 최대 3 |
-| AI | `ipgo-dev-onebox-ai-api`, bridge 8000 → host 18000, 메모리 256MiB |
+| AI | `ipgo-dev-onebox-ai-api`, bridge 8000 → host 18000, 메모리 512MiB |
 | AI 모드 (2026-11-13 관측) | real, 내장 worker 활성·독립 worker 0; LLM 응답·업무 검증과 구분 |
 | DB | 기존 RDS, private 접근·7일 백업·삭제 보호 유지 |
 | 관측 | ECS container insights 꺼짐, 표준 EC2 지표, 5분 간격 메모리 지표 |
@@ -75,14 +75,18 @@ CloudFront·로그·트래픽·추가 백업/스토리지 등의 실제 사용�
 
 ## 공유 호스트 AI 배포 정책
 
+512MiB 후속 정합성은 [Infra #94](https://github.com/IpgoITGO/ipgo-infra/issues/94) → [AI #136](https://github.com/IpgoITGO/ipgo-ai/issues/136) 순서로 반영한다. 기존 완료 작업은 다시 열지 않는다.
+
 관련 작업은 [Infra #61](https://github.com/IpgoITGO/ipgo-infra/issues/61)과
 [AI #105](https://github.com/IpgoITGO/ipgo-ai/issues/105)다. 정책의 정본은 이 절이며,
 범위는 개발 환경의 onebox AI 서비스다. 기존 Fargate 서비스와 Server workflow는 이번 변경 대상이 아니다.
 
 ### 정책과 실제 설정
 
-2026-11-13 10:59~11:01 KST의 `DescribeServices`, `DescribeTasks`, `DescribeTaskDefinition` 조회 결과다.
-관측값은 이후 배포·쓰기 직전의 fresh 확인을 대신하지 않는다.
+2026-11-17 OOM 긴급 복구에서 AI 태스크와 앱 컨테이너의 메모리를 각각 512MiB로 조정했고, 후속 공식 AWS 조회에서 AI33의 같은 설정을 확인했다. 이 후속 정합성 변경은 해당 승인·실제 상태를 문서와 AI 배포 검증에 반영하며 새 메모리 변경·재기동·Terraform apply를 수행하지 않는다. 256MiB는 아래 과거 관측과 구분하며 현재 배포의 허용 기준으로 사용하지 않는다.
+
+기본 정책과 나머지 관측은 2026-11-13 10:59~11:01 KST의 `DescribeServices`, `DescribeTasks`, `DescribeTaskDefinition` 결과다. AI 메모리 행은 2026-11-17 긴급 복구 후 AI33의 512MiB 관측으로 갱신했다.
+과거 다른 행의 관측값은 이후 배포·쓰기 직전의 fresh 확인을 대신하지 않는다.
 
 | 항목 | 정책·관측값 |
 | --- | --- |
@@ -90,7 +94,7 @@ CloudFront·로그·트래픽·추가 백업/스토리지 등의 실제 사용�
 | 배포 비율 | `minimumHealthyPercent=0`, `maximumPercent=100` |
 | 실패 복구 | deployment circuit breaker와 rollback 활성 |
 | health 유예 | `healthCheckGracePeriodSeconds=300` |
-| AI 실행 기반 | ARM64, 메모리 256MiB, `bridge`, container 8000 → 고정 host 18000 |
+| AI 실행 기반 | ARM64, 메모리 512MiB, `bridge`, container 8000 → 고정 host 18000 |
 | AI 수량 | 정상 운영 목표·실행 1, 대기 0; 승인된 API 수량은 최대 1 |
 | worker | 내장 worker 활성, 독립 worker 서비스 목표·실행·대기 0 |
 | 공유 상태 | Server와 같은 container instance; Server 메모리 448MiB·고정 host 8080 |
