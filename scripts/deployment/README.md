@@ -4,6 +4,18 @@
 실행하지 않는다. 실제 계정/환경/source/workflow SHA·영향·복구 범위를 승인받고 기존 배포
 절차를 수행하는 담당자가 사용한다. 소스 CI 통과·배포 성공·앱 헬스·실제 업무 성공을 구분한다.
 
+## Server·AI 공통 배포 도구 원본
+
+이 디렉터리의 `check_ecr_image.py`, `summarize_timing.py`를 공통 원본으로 관리합니다.
+`shared-tools.lock.json`의 두 SHA-256이 배포 도구 버전을 고정합니다. 동작을 바꿀 때는 Infra에서
+원본과 해시를 함께 검토하고, Server·AI에서는 해당 Infra 전체 커밋을 변경 설명에 적은 뒤
+두 파일과 lock을 그대로 가져옵니다. 사본이나 lock만 따로 변경하지 않습니다. 각 저장소의
+기존 Python CI가 파일과 lock의 불일치를 검사합니다. lock 자체의 변경은 리뷰에서 Infra 원본과 대조합니다.
+
+배포 workflow는 기존 경로의 로컬 사본만 사용합니다. Infra를 배포 중 내려받지 않으며,
+ECR 검사는 workflow SHA, 시간 집계는 checkout한 source SHA를 계속 따릅니다. 적용을 되돌릴
+때는 해당 서비스의 사본과 lock을 함께 이전 버전으로 되돌립니다.
+
 ## 준비와 안전 경계
 
 - 준비 시작부터 승인 대기·DB 선행 작업·앱 교체·독립 검증·최종 문서 저장까지 시간을 기록한다.
