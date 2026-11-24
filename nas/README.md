@@ -67,7 +67,7 @@ compose 네트워크 안에서 합성 자료로 확인했다. 실제 고객 자�
 Client(Vercel)의 `/api/*` 프록시 대상이 이 주소라 Client는 바꾸지 않는다. nginx는 `/api/`와
 `/actuator/health`만 Server(`127.0.0.1:18090`)로 넘기고 나머지는 404다. 업로드 때문에 요청 크기는 11MB다.
 
-1. **DNS (사용자 직접, hosting.co.kr):** `ipgo-dev-api` CNAME → `iwh-my-nas.duckdns.org.`
+1. **DNS (사용자 직접, hosting.kr — 메가존 로그인):** `ipgo-dev-api` CNAME → `iwh-my-nas.duckdns.org.`
    (다른 `*.iwhya.kr` 사이트와 같은 NAS DDNS). AWS 인증서 확인용 `_…ipgo-dev-api` 레코드가 있으면 지운다.
 2. **HTTP 블록만 먼저 설치:** `nginx/ipgo-dev-api-iwhya.conf`의 두 번째(80) `server` 블록만
    `/etc/nginx/sites-available/ipgo-dev-api-iwhya`에 두고 `sites-enabled`에 링크, `nginx -t` 후 reload.
