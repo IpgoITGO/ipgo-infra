@@ -86,6 +86,21 @@ Vercel 화면 주소 `https://ipgo-dev.iwhya.kr/api/*`를 통해 로그인 → �
 hosting.kr DNS는 저장 뒤 네임서버 4대에 퍼지는 데 약 30분 걸렸다. `dig @ns1..ns4.hosting.co.kr`로 모두 바뀐 것을
 확인한 뒤 인증서를 발급한다.
 
+## 인증 메일 (Gmail SMTP)
+
+가입 인증·비밀번호 재설정 메일은 Gmail SMTP로 보낸다. 다른 NAS 서비스의 SMTP 비밀번호는 쓰지 않고
+**ITGO 전용 Google 앱 비밀번호**를 따로 발급한다(따로 끄고 바꿀 수 있게).
+
+1. 실행 `.env`에 비밀이 아닌 값을 넣는다: `SPRING_MAIL_HOST=smtp.gmail.com`, `SPRING_MAIL_PORT=587`,
+   `SPRING_MAIL_USERNAME=<Gmail 주소>`, `IPGO_MAIL_FROM=<같은 주소>`.
+2. **사용자 직접:** Google 계정 → 보안 → 2단계 인증 → 앱 비밀번호에서 이름을 `ITGO NAS`로 발급한다.
+3. NAS 터미널에서 `nas/scripts/set-env-secret.sh <runtime>/.env SPRING_MAIL_PASSWORD`를 실행하고
+   발급한 16자리를 붙여 넣는다. 화면·채팅·셸 기록에 남지 않고, 띄어쓰기는 자동으로 지운다.
+4. `$C up -d server` 후 health를 확인하고 인증 메일 요청이 실제 메일함에 도착하는지 본다.
+
+값이 비어 있으면 Server는 정상 기동하고 인증 메일 요청만 `503 EMAIL_DELIVERY_UNAVAILABLE`로 끝난다.
+끄려면 Google에서 `ITGO NAS` 앱 비밀번호를 삭제하거나 `.env`의 `SPRING_MAIL_PASSWORD` 줄을 지우고 server를 재생성한다.
+
 ## 알려진 한계
 
 - ElasticMQ는 메시지를 메모리에만 둔다. 컨테이너가 재시작되면 처리 대기 중인 계산 메시지가 사라질 수 있다.

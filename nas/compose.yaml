@@ -111,7 +111,19 @@ services:
       IPGO_SQS_ENDPOINT: http://elasticmq:9324
       IPGO_ENGINE_DEFAULT_METHOD: LGBM19
       IPGO_ENGINE_MODEL_VERSION: ${IPGO_ENGINE_MODEL_VERSION:?IPGO_ENGINE_MODEL_VERSION is required}
-      # 메일·결제·LLM 설명은 비밀값을 새로 발급한 뒤 별도 단계에서 켠다.
+      # 결제·LLM 설명은 비밀값을 새로 발급한 뒤 별도 단계에서 켠다.
+      # 가입 인증·비밀번호 재설정 메일(Gmail SMTP). 값이 비어 있으면 발송 요청이 503으로 끝난다.
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED: "true"
+      IPGO_MAIL_FROM: ${IPGO_MAIL_FROM:-}
+      # 메일 설정이 생기면 Spring이 health마다 SMTP에 접속해 본다. 메일 장애로 앱 전체가 DOWN(503)이 되고
+      # 15초마다 Gmail에 로그인하게 되므로 끈다. 메일 발송 실패는 해당 요청의 503으로만 드러난다.
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
       IPGO_INSIGHT_ENABLED: "false"
       IPGO_INSIGHT_BATCH_ENABLED: "false"
       IPGO_INSIGHT_SINGLE_RESULT_ENABLED: "false"
