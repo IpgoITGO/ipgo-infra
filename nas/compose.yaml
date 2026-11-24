@@ -1,0 +1,177 @@
+# IpgoITGO 개발 환경 — NAS 단일 호스트 구성
+# 실행 방법과 되돌리기는 nas/README.md를 따른다. 비밀값은 compose 밖의 .env에만 둔다.
+name: ipgo-dev
+
+x-sdk-env: &sdk-env
+  # ElasticMQ는 인증을 검사하지 않는다. SDK가 요구하는 형식상의 값이다.
+  AWS_ACCESS_KEY_ID: local-only
+  AWS_SECRET_ACCESS_KEY: local-only
+  AWS_REGION: ap-northeast-2
+  AWS_DEFAULT_REGION: ap-northeast-2
+  AWS_EC2_METADATA_DISABLED: "true"
+  IPGO_JOBS_QUEUE_URL: http://elasticmq:9324/000000000000/ipgo-dev-jobs
+  IPGO_RESULTS_QUEUE_URL: http://elasticmq:9324/000000000000/ipgo-dev-results
+
+x-database-task: &database-task
+  build:
+    context: ${IPGO_SERVER_SRC:?IPGO_SERVER_SRC is required}
+    dockerfile: Dockerfile.database
+  image: ipgo-dev/database-task:local
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: "no"
+  mem_limit: 256m
+
+services:
+  postgres:
+    image: postgres:18.7-alpine
+    environment:
+      POSTGRES_DB: ipgo
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ipgo"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    mem_limit: 384m
+
+  db-bootstrap:
+    <<: *database-task
+    command: ["bootstrap"]
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ipgo
+      DB_ADMIN_USERNAME: postgres
+      DB_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      IPGO_MIGRATOR_PASSWORD: ${IPGO_MIGRATOR_PASSWORD:?IPGO_MIGRATOR_PASSWORD is required}
+      IPGO_SERVER_PASSWORD: ${IPGO_SERVER_PASSWORD:?IPGO_SERVER_PASSWORD is required}
+      IPGO_AI_READER_PASSWORD: ${IPGO_AI_READER_PASSWORD:?IPGO_AI_READER_PASSWORD is required}
+      IPGO_AI_SERVICE_READER_PASSWORD: ${IPGO_AI_SERVICE_READER_PASSWORD:?IPGO_AI_SERVICE_READER_PASSWORD is required}
+
+  db-migrate:
+    <<: *database-task
+    command: ["migrate"]
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ipgo
+      DB_USERNAME: ipgo_migrator
+      DB_PASSWORD: ${IPGO_MIGRATOR_PASSWORD}
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.7.1
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro
+    restart: unless-stopped
+    mem_limit: 128m
+
+  # 업로드 원본 볼륨을 Server(uid 10001)가 쓸 수 있게 한 번만 소유자를 맞춘다.
+  uploads-init:
+    image: postgres:18.7-alpine
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown 10001:10001 /data/raw && chmod 0750 /data/raw"]
+    volumes:
+      - uploads:/data/raw
+    restart: "no"
+
+  server:
+    build:
+      context: ${IPGO_SERVER_SRC}
+      dockerfile: Dockerfile
+    image: ipgo-dev/server:local
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      uploads-init:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_started
+    environment:
+      <<: *sdk-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ipgo
+      SPRING_DATASOURCE_USERNAME: ipgo_server
+      SPRING_DATASOURCE_PASSWORD: ${IPGO_SERVER_PASSWORD}
+      # 스키마는 db-migrate가 ipgo_migrator로 적용한다. 앱 계정은 DDL 권한이 없다.
+      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      IPGO_JWT_SECRET: ${IPGO_JWT_SECRET:?IPGO_JWT_SECRET is required}
+      IPGO_AUTH_COOKIE_SECURE: ${IPGO_AUTH_COOKIE_SECURE:-true}
+      IPGO_SIGNUP_ENABLED: ${IPGO_SIGNUP_ENABLED:-true}
+      IPGO_UPLOAD_STORAGE: local
+      IPGO_UPLOAD_DIR: /data/raw
+      IPGO_ENGINE_ENABLED: "true"
+      IPGO_ENGINE_TRANSPORT_ENABLED: "true"
+      IPGO_ENGINE_BASE_URL: http://ai:8000
+      IPGO_SQS_ENDPOINT: http://elasticmq:9324
+      IPGO_ENGINE_DEFAULT_METHOD: LGBM19
+      IPGO_ENGINE_MODEL_VERSION: ${IPGO_ENGINE_MODEL_VERSION:?IPGO_ENGINE_MODEL_VERSION is required}
+      # 메일·결제·LLM 설명은 비밀값을 새로 발급한 뒤 별도 단계에서 켠다.
+      IPGO_INSIGHT_ENABLED: "false"
+      IPGO_INSIGHT_BATCH_ENABLED: "false"
+      IPGO_INSIGHT_SINGLE_RESULT_ENABLED: "false"
+      IPGO_INSIGHT_MODEL_ENABLED: "false"
+      IPGO_BILLING_ENABLED: "false"
+      IPGO_BILLING_WORKER_ENABLED: "false"
+      IPGO_PAYMENT_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx256m -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=48m
+    volumes:
+      - uploads:/data/raw
+    ports:
+      - "127.0.0.1:${IPGO_SERVER_PORT:-18090}:8080"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    restart: unless-stopped
+    # 실측(2026-11-24) 계산 1회 후 약 400 MiB. heap 256 MiB 외 metaspace·스레드 여유를 둔다.
+    mem_limit: 640m
+
+  ai:
+    build:
+      context: ${IPGO_AI_SRC:?IPGO_AI_SRC is required}
+      dockerfile: Dockerfile
+    image: ipgo-dev/ai:local
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_started
+    environment:
+      <<: *sdk-env
+      AWS_ENDPOINT_URL_SQS: http://elasticmq:9324
+      ENGINE_MODE: real
+      IPGO_EMBEDDED_WORKER_ENABLED: "true"
+      DATABASE_URL: postgresql://ipgo_ai_reader:${IPGO_AI_READER_PASSWORD}@postgres:5432/ipgo
+      STORAGE_BASE: /data/raw
+      IPGO_MODEL19_DIR: /opt/ipgo-model19
+      IPGO_MODEL_INSIGHT_ENABLED: "false"
+    volumes:
+      - uploads:/data/raw:ro
+      - ${IPGO_MODEL19_HOST_DIR:?IPGO_MODEL19_HOST_DIR is required}:/opt/ipgo-model19:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+    restart: unless-stopped
+    mem_limit: 512m
+
+volumes:
+  pg-data:
+  uploads:
+
+# NAS의 Docker 기본 주소 풀이 소진돼 있어 대역을 직접 지정한다. 겹치면 .env에서 바꾼다.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${IPGO_DOCKER_SUBNET:-10.249.50.0/24}
