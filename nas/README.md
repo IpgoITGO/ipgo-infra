@@ -77,6 +77,14 @@ Client(Vercel)의 `/api/*` 프록시 대상이 이 주소라 Client는 바꾸지
 5. **쿠키:** 실행 디렉터리 `.env`의 `IPGO_AUTH_COOKIE_SECURE=true`로 바꾸고 `$C up -d server`.
 
 되돌리기: `sites-enabled` 링크 삭제 후 reload(인증서는 남겨도 된다). DNS를 되돌리면 외부 접근이 끊긴다.
+인증서 갱신은 기존 `certbot.timer`가 하고, 공용 deploy hook이 `nginx -t` 후 reload한다.
+
+공개 확인 (2026-11-24): Let's Encrypt 인증서(2027-02-22 만료), 외부 `GET /actuator/health` 200 UP,
+`/`·`/actuator/env`·`/swagger-ui`·`/v3/api-docs` 404, HTTP→HTTPS 301, 6MB 업로드가 413이 아니라 앱 인증(401)까지 도달.
+Vercel 화면 주소 `https://ipgo-dev.iwhya.kr/api/*`를 통해 로그인 → 합성 업로드 → 정제 → LGBM19 계산까지 통과했다.
+
+hosting.kr DNS는 저장 뒤 네임서버 4대에 퍼지는 데 약 30분 걸렸다. `dig @ns1..ns4.hosting.co.kr`로 모두 바뀐 것을
+확인한 뒤 인증서를 발급한다.
 
 ## 알려진 한계
 
