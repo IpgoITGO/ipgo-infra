@@ -62,10 +62,33 @@ compose 네트워크 안에서 합성 자료로 확인했다. 실제 고객 자�
 - 형식이 틀린 파일은 접수 단계에서 `400 UPLOAD_INVALID_FORMAT`
 - LLM 설명 호출 0건
 
+## 외부 공개 (`ipgo-dev-api.iwhya.kr`)
+
+Client(Vercel)의 `/api/*` 프록시 대상이 이 주소라 Client는 바꾸지 않는다. nginx는 `/api/`와
+`/actuator/health`만 Server(`127.0.0.1:18090`)로 넘기고 나머지는 404다. 업로드 때문에 요청 크기는 11MB다.
+
+1. **DNS (사용자 직접, hosting.kr — 메가존 로그인):** `ipgo-dev-api` CNAME → `iwh-my-nas.duckdns.org.`
+   (다른 `*.iwhya.kr` 사이트와 같은 NAS DDNS). AWS 인증서 확인용 `_…ipgo-dev-api` 레코드가 있으면 지운다.
+2. **HTTP 블록만 먼저 설치:** `nginx/ipgo-dev-api-iwhya.conf`의 두 번째(80) `server` 블록만
+   `/etc/nginx/sites-available/ipgo-dev-api-iwhya`에 두고 `sites-enabled`에 링크, `nginx -t` 후 reload.
+3. **인증서:** `sudo certbot certonly --webroot -w /var/www/certbot -d ipgo-dev-api.iwhya.kr`
+   (기존 사이트와 같은 webroot 방식, 자동 갱신 timer 공용).
+4. **전체 설정 설치:** 파일 전체로 교체 → `nginx -t` → reload.
+5. **쿠키:** 실행 디렉터리 `.env`의 `IPGO_AUTH_COOKIE_SECURE=true`로 바꾸고 `$C up -d server`.
+
+되돌리기: `sites-enabled` 링크 삭제 후 reload(인증서는 남겨도 된다). DNS를 되돌리면 외부 접근이 끊긴다.
+인증서 갱신은 기존 `certbot.timer`가 하고, 공용 deploy hook이 `nginx -t` 후 reload한다.
+
+공개 확인 (2026-11-24): Let's Encrypt 인증서(2027-02-22 만료), 외부 `GET /actuator/health` 200 UP,
+`/`·`/actuator/env`·`/swagger-ui`·`/v3/api-docs` 404, HTTP→HTTPS 301, 6MB 업로드가 413이 아니라 앱 인증(401)까지 도달.
+Vercel 화면 주소 `https://ipgo-dev.iwhya.kr/api/*`를 통해 로그인 → 합성 업로드 → 정제 → LGBM19 계산까지 통과했다.
+
+hosting.kr DNS는 저장 뒤 네임서버 4대에 퍼지는 데 약 30분 걸렸다. `dig @ns1..ns4.hosting.co.kr`로 모두 바뀐 것을
+확인한 뒤 인증서를 발급한다.
+
 ## 알려진 한계
 
 - ElasticMQ는 메시지를 메모리에만 둔다. 컨테이너가 재시작되면 처리 대기 중인 계산 메시지가 사라질 수 있다.
-- 외부 공개(nginx·인증서·DNS)는 다음 단계다. 그 전까지 `IPGO_AUTH_COOKIE_SECURE=false`다.
 
 ## 되돌리기
 
